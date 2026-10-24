@@ -3,15 +3,23 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Document, DocumentChunk
+from app.security.context import AccessContext
 
 
 class DocumentRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, *, user_id: str, title: str, content_type: str) -> Document:
+    async def create(
+        self,
+        *,
+        context: AccessContext,
+        title: str,
+        content_type: str,
+    ) -> Document:
         document = Document(
-            user_id=user_id,
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
             title=title,
             content_type=content_type,
             status="processing",

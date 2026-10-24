@@ -1,11 +1,12 @@
 import uuid
 
 import msgspec
-from litestar.datastructures import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ingestion.chunking import chunk_text
-from app.ingestion.parsers.registry import get_parser
+from app.ingestion.validation import parse_uploaded_document
 from app.repositories.documents import DocumentRepository
+from app.security.context import AccessContext
 
 
 class IngestResult(msgspec.Struct):
@@ -14,21 +15,38 @@ class IngestResult(msgspec.Struct):
 
 
 class DocumentService:
-    def __init__(self, repository: DocumentRepository) -> None:
-        self._repository = repository
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        self._session_factory = session_factory
 
-    async def ingest(self, *, user_id: str, upload: UploadFile) -> IngestResult:
-        raw_bytes = await upload.read()
-        parser = get_parser(upload.filename)
-        text = parser.parse(raw_bytes)
-
-        extension = upload.filename.rsplit(".", 1)[-1].lower()
-        document = await self._repository.create(
-            user_id=user_id, title=upload.filename, content_type=extension,
+    async def ingest(
+        self,
+        *,
+        context: AccessContext,
+        filename: str | None,
+        raw_bytes: bytes,
+    ) -> IngestResult:
+        parsed = parse_uploaded_document(
+            filename=filename,
+            raw_bytes=raw_bytes,
         )
 
-        chunks = chunk_text(text)
-        await self._repository.add_chunks(document_id=document.id, texts=chunks)
-        await self._repository.mark_ready(document)
+        chunks = chunk_text(parsed.text)
 
-        return IngestResult(document_id=document.id, chunks_created=len(chunks))
+        async with self._session_factory.begin() as session:
+            repository = DocumentRepository(session)
+
+            document = await repository.create(
+                context=context,
+                title=parsed.title,
+                content_type=parsed.content_type,
+            )
+
+            await repository.add_chunks(document_id=document.id, texts=chunks)
+            await repository.mark_ready(document)
+
+            document_id = document.id
+
+        return IngestResult(document_id=document_id, chunks_created=len(chunks))

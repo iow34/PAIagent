@@ -1,8 +1,19 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-from app.config.settings import get_settings
+
+@dataclass(frozen=True)
+class DatabaseResources:
+    engine: AsyncEngine
+    session_factory: async_sessionmaker[AsyncSession]
 
 
 def _to_asyncpg_url(url: str) -> str:
@@ -11,12 +22,24 @@ def _to_asyncpg_url(url: str) -> str:
     return url
 
 
-settings = get_settings()
-engine = create_async_engine(_to_asyncpg_url(settings.database_url), echo=False)
-async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+@asynccontextmanager
+async def open_database(
+    database_url: str,
+) -> AsyncIterator[DatabaseResources]:
+    engine = create_async_engine(
+        _to_asyncpg_url(database_url),
+        echo=False,
+    )
 
+    try:
+        session_factory = async_sessionmaker(
+            engine,
+            expire_on_commit=False,
+        )
 
-async def get_db_session() -> AsyncIterator[AsyncSession]:
-    async with async_session_factory() as session:
-        async with session.begin():
-            yield session
+        yield DatabaseResources(
+            engine=engine,
+            session_factory=session_factory,
+        )
+    finally:
+        await engine.dispose()
