@@ -64,32 +64,26 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.UUID(), nullable=True),
     )
 
-    connection = op.get_bind()
-
-    connection.execute(
+    op.execute(
         sa.text(
             """
             INSERT INTO tenants (id, name)
             VALUES (CAST(:tenant_id AS uuid), :name)
             """
-        ),
-        {
-            "tenant_id": DEV_TENANT_ID,
-            "name": "Development tenant",
-        },
+        ).bindparams(
+            tenant_id=DEV_TENANT_ID,
+            name="Development tenant",
+        )
     )
 
-    connection.execute(
+    op.execute(
         sa.text(
             """
             UPDATE documents
             SET tenant_id = CAST(:tenant_id AS uuid)
             WHERE tenant_id IS NULL
             """
-        ),
-        {
-            "tenant_id": DEV_TENANT_ID,
-        },
+        ).bindparams(tenant_id=DEV_TENANT_ID)
     )
 
     op.alter_column(

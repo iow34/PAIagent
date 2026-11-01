@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-EMBEDDING_DIM = 1536  # відповідає моделі text-embedding-3-small
+EMBEDDING_DIM = 1536  # for text-embedding-3-small
 
 
 class Base(DeclarativeBase):
@@ -74,6 +74,19 @@ class Document(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
+    )
+
+    embedding_model: Mapped[str | None] = mapped_column(String(100))
+    embedding_dimensions: Mapped[int | None]
+    embedding_tokens: Mapped[int | None]
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    indexing_error_code: Mapped[str | None] = mapped_column(String(50))
+
+    indexing_attempt_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    indexing_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(
