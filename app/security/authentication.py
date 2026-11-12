@@ -1,14 +1,20 @@
 from typing import Annotated, Any
+from uuid import UUID
 
 from litestar import Request
 from litestar.di import NamedDependency
-from litestar.exceptions import NotAuthorizedException, ValidationException
+from litestar.exceptions import (
+    NotAuthorizedException,
+    PermissionDeniedException,
+    ValidationException,
+)
 from litestar.params import Parameter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.repositories.api_keys import APIKeysRepository
 from app.security.api_keys import hash_api_key
 from app.security.context import AccessContext
+from app.security.permissions import require_scope
 
 
 async def get_access_context(
@@ -36,11 +42,11 @@ async def get_access_context(
     async with db_session_factory.begin() as session:
         repository = APIKeysRepository(session)
 
-        tenant_id = await repository.get_active_tenant_id(
+        api_key = await repository.get_active_key(
             key_hash=hash_api_key(parts[1]),
         )
 
-    if tenant_id is None:
+    if api_key is None:
         raise NotAuthorizedException(
             detail="Missing or invalid API key.",
             headers={"WWW-Authenticate": "Bearer"},
@@ -56,4 +62,19 @@ async def get_access_context(
             ),
         )
 
-    return AccessContext(tenant_id=tenant_id, user_id=user_id)
+    context = AccessContext(
+        tenant_id=api_key.tenant_id,
+        user_id=user_id,
+        scopes=tuple(api_key.scopes),
+        source_ids=None
+        if api_key.source_ids is None
+        else tuple(UUID(value) for value in api_key.source_ids),
+    )
+    scope = request.route_handler.opt.get("required_scope", "legacy:*")
+    require_scope(context, scope)
+    if scope == "legacy:*" and context.source_ids is not None:
+        raise PermissionDeniedException(
+            detail="Legacy document routes do not support source-restricted keys.",
+            extra={"code": "source_forbidden"},
+        )
+    return context

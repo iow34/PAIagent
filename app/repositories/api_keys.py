@@ -21,3 +21,11 @@ class APIKeysRepository:
         )
 
         return await self._session.scalar(statement)
+
+    async def get_active_key(self, *, key_hash: str) -> ServiceAPIKey | None:
+        return await self._session.scalar(
+            select(ServiceAPIKey).where(
+                ServiceAPIKey.key_hash == key_hash,
+                ServiceAPIKey.is_active.is_(True),
+            )
+        )

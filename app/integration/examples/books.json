@@ -1,0 +1,24 @@
+{
+  "collection": {"name": "books", "description": "A reading catalog"},
+  "schema": {
+    "kind": "record", "version": 1,
+    "json_schema": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "heading": {"type": "string", "maxLength": 500},
+        "isbn": {"type": "string", "maxLength": 20},
+        "pages": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "labels": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 50}}
+      },
+      "required": ["heading", "isbn", "pages"]
+    },
+    "field_mappings": [
+      {"path": "/heading", "role": "display_name"},
+      {"path": "/heading", "role": "search_text"},
+      {"path": "/isbn", "role": "external_reference"},
+      {"path": "/pages", "role": "quantity", "unit": "page"}
+    ]
+  },
+  "operation": "snapshot",
+  "payload": {"heading": "Основи Python", "isbn": "example-book-001", "pages": 320, "labels": ["programming", "python"]}
+}

@@ -1,11 +1,14 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     String,
     Text,
@@ -52,6 +55,14 @@ class ServiceAPIKey(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255))
+    scopes: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        default=lambda: ["legacy:*", "catalog:read"],
+        server_default=text('\'["legacy:*", "catalog:read"]\''),
+    )
+    source_ids: Mapped[list[str] | None] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=True
+    )
     key_hash: Mapped[str] = mapped_column(
         String(64),
         unique=True,
@@ -280,4 +291,87 @@ class DocumentKnowledgeRecord(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+class IntegrationSource(Base):
+    __tablename__ = "integration_sources"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_integration_source_name"),
+        UniqueConstraint("tenant_id", "id", name="uq_integration_source_tenant_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="RESTRICT")
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class IntegrationCollection(Base):
+    __tablename__ = "integration_collections"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["integration_sources.tenant_id", "integration_sources.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("source_id", "name", name="uq_integration_collection_name"),
+        UniqueConstraint("tenant_id", "id", name="uq_integration_collection_tenant_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="RESTRICT")
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class IntegrationSchema(Base):
+    __tablename__ = "integration_schemas"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "collection_id"],
+            ["integration_collections.tenant_id", "integration_collections.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "collection_id", "kind", "version", name="uq_integration_schema_version"
+        ),
+        CheckConstraint(
+            "kind IN ('record', 'event')", name="ck_integration_schema_kind"
+        ),
+        CheckConstraint("version >= 1", name="ck_integration_schema_version"),
+        CheckConstraint(
+            "jsonb_typeof(json_schema) = 'object'", name="ck_integration_schema_object"
+        ),
+        CheckConstraint(
+            "jsonb_typeof(field_mappings) = 'array'",
+            name="ck_integration_schema_mappings",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="RESTRICT")
+    )
+    collection_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    kind: Mapped[str] = mapped_column(String(16))
+    version: Mapped[int] = mapped_column()
+    json_schema: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    field_mappings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

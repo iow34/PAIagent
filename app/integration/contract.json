@@ -1,0 +1,413 @@
+{
+  "api_version": "1",
+  "contract_version": "0.2.0",
+  "status": "Step 6 registry implemented; ingestion and execution routes below are design-only until advertised as available by /v1/capabilities.",
+  "ownership": {
+    "tenant": "Derived exclusively from the API key.",
+    "registry": "Tenant-shared metadata guarded by operation and source grants.",
+    "content": "Each record, event, file, run and result belongs to tenant_id + X-User-ID. Schema access does not grant content access.",
+    "received_at": "Server UTC time assigned only when an item is first accepted, never supplied by a client."
+  },
+  "envelope_json_schema": {
+    "$ref": "#/$defs/Envelope",
+    "$defs": {
+      "Envelope": {
+        "title": "Envelope",
+        "type": "object",
+        "properties": {
+          "api_version": {
+            "enum": [
+              "1"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "operation": {
+            "enum": [
+              "delete",
+              "observe",
+              "snapshot",
+              "upsert"
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "object_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          }
+        },
+        "required": [
+          "api_version",
+          "source_id",
+          "collection_id",
+          "schema_version",
+          "operation",
+          "occurred_at",
+          "payload"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "envelope_semantics": {
+    "snapshot": "record schema; external_id + object_version required; event_id absent; full object payload.",
+    "upsert": "record schema; external_id + object_version + event_id required; full replacement payload, not a partial patch.",
+    "delete": "record schema; external_id + object_version + event_id required; payload must be null.",
+    "observe": "event schema; event_id required; external_id optional; object_version prohibited; object payload. No current-state mutation.",
+    "metadata": [
+      "trace_id",
+      "origin",
+      "correlation_id"
+    ],
+    "versions": "Positive integers. Schema versions are explicit and immutable. No implicit latest, coercion, or automatic migration. Record/event version spaces are independent.",
+    "time": "RFC3339 timestamp with offset, normalized to UTC on ingestion. occurred_at is the external fact time; ordering uses object_version, not delivery time."
+  },
+  "conventions": {
+    "pagination": {
+      "query": {
+        "limit": "1..100; default 50",
+        "cursor": "UUID from next_cursor"
+      },
+      "response": {
+        "items": [],
+        "next_cursor": "UUID or null"
+      },
+      "ordering": "ascending immutable resource UUID; not a snapshot; concurrent new rows may require restarting enumeration"
+    },
+    "filters": "Registry schemas accept kind=record|event. Planned content filters: source_id, collection_id, external_id, occurred_from (inclusive), occurred_before (exclusive). Unsupported query fields return 400 on registry routes.",
+    "errors": {
+      "shape": {
+        "status_code": 422,
+        "detail": "Safe summary",
+        "extra": {
+          "code": "machine_readable_code",
+          "issues": [
+            {
+              "path": "/field",
+              "keyword": "type",
+              "message": "Constraint type failed."
+            }
+          ]
+        }
+      },
+      "statuses": {
+        "400": "Malformed DTO, unknown field/query or invalid parameter",
+        "401": "Missing/invalid/inactive key",
+        "403": "Missing operation/source grant",
+        "404": "Missing or foreign-tenant resource",
+        "409": "Duplicate name/version or conflicting delivery",
+        "413": "HTTP request exceeds body limit",
+        "422": "Schema, semantic mapping, envelope or payload constraint",
+        "429": "Rate limit; respect RateLimit-Reset",
+        "500": "Storage or unexpected server failure"
+      }
+    },
+    "rate_limits": "Registry: 120 requests/minute per peer IP per process, including failed requests. RateLimit-* headers; 429 has RateLimit-Reset in seconds. A shared deployment-wide quota is not implemented.",
+    "compatibility": "Existing document/search/query routes retain their request/response bodies. Legacy keys keep legacy:* and catalog:read only. New grants require administrative issuance. Source-restricted keys cannot use unscoped legacy document routes.",
+    "batch_ack": {
+      "planned_step": 7,
+      "atomicity": "Per-item transactions, not an atomic batch. At most 100 envelopes and 1 MiB per batch.",
+      "response": {
+        "batch_id": "UUID",
+        "items": [
+          {
+            "index": 0,
+            "status": "accepted|duplicate|rejected|stale",
+            "external_id": "optional",
+            "event_id": "optional",
+            "received_at": "RFC3339 for accepted/duplicate",
+            "error": "structured error or null"
+          }
+        ]
+      },
+      "retry": "Retry only failed/unknown items with identical identifiers and bodies; reuse of an event_id with different content returns conflict. Acknowledgement means persisted, not analyzed."
+    },
+    "idempotency": "Registry POST is create-only; duplicate name/version gives 409. Read the existing resource and compare. Planned ingestion uses source+collection+owner+event_id for changes/observations and external_id+object_version for state. No idempotency guarantee is claimed before step 7.",
+    "schema_migration": "Register a new version. Existing records retain their original schema version. Revalidation/backfill is a separate explicit operation in step 7; changing the schema does not transform stored data.",
+    "deletion": "Registry deletion/editing is not exposed. Step 7 defines tombstones, old delivery rejection and removal of derived data; validation of a delete envelope is not deletion."
+  },
+  "planned_routes": [
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/imports",
+      "step": 7,
+      "scope": "data:write",
+      "request": {
+        "mode": "snapshot",
+        "items": "Envelope[snapshot], 1..100",
+        "completeness": "partial|complete",
+        "snapshot_id": "external ID",
+        "part": "positive integer",
+        "final": "boolean"
+      },
+      "response": "Batch acknowledgement; complete snapshots need explicit reconciliation, absence is not an implicit delete."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/records",
+      "step": 7,
+      "scope": "data:write",
+      "request": {
+        "items": "Envelope[snapshot|upsert|delete], 1..100"
+      },
+      "response": "Batch acknowledgement"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/collections/{collection_id}/records",
+      "step": 7,
+      "scope": "data:read",
+      "request": "cursor, limit, external_id",
+      "response": "Owner-scoped current-state page; schema_version, object_version, received_at, provenance"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/events",
+      "step": 7,
+      "scope": "data:write",
+      "request": {
+        "items": "Envelope[upsert|delete|observe], 1..100"
+      },
+      "response": "Batch acknowledgement"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/collections/{collection_id}/events",
+      "step": 7,
+      "scope": "data:read",
+      "request": "cursor, limit, occurred_from, occurred_before, external_id",
+      "response": "Owner-scoped event history with event_id and received_at"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/files",
+      "step": 8,
+      "scope": "data:write",
+      "request": "multipart: file + JSON metadata (external_id, object_version, schema_version, mapping)",
+      "response": "202 run ID; normalized records/documents retain source/collection provenance"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/profiles",
+      "step": 9,
+      "scope": "profiles:write",
+      "request": {
+        "name": "slug",
+        "version": "positive integer",
+        "capability": "supported catalog name",
+        "goal": "bounded text",
+        "selection": {
+          "collection_ids": "UUID[]",
+          "schema_versions": "explicit versions",
+          "period": "UTC interval"
+        },
+        "metrics": "allowlisted definitions",
+        "output_schema": "supported JSON Schema",
+        "memory_enabled": false
+      },
+      "response": "201 immutable profile version; source grants intersect at execution"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/profiles",
+      "step": 9,
+      "scope": "profiles:read",
+      "request": "cursor, limit",
+      "response": "Authorized profile version page"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs",
+      "step": 10,
+      "scope": "runs:write",
+      "request": {
+        "profile_id": "UUID",
+        "profile_version": "positive integer",
+        "mode": "sync|async",
+        "input": "persisted selection or explicit one-off payload",
+        "idempotency_key": "bounded external ID"
+      },
+      "response": "200 completed result for sync, 202 run for async; unknown capability/configuration is rejected"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/{run_id}",
+      "step": 10,
+      "scope": "runs:read",
+      "response": {
+        "id": "UUID",
+        "status": "queued|running|succeeded|failed|cancelled",
+        "result_id": "UUID or null",
+        "error": "structured error or null",
+        "created_at": "UTC",
+        "started_at": "UTC or null",
+        "finished_at": "UTC or null"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/results/{result_id}",
+      "step": 10,
+      "scope": "results:read",
+      "response": {
+        "id": "UUID",
+        "capability": "catalog name",
+        "profile_version": "positive integer",
+        "payload": "capability-specific validated JSON",
+        "evidence": "authorized record/event/chunk references + versions",
+        "period": "UTC interval",
+        "coverage": "complete|partial|unknown with gaps",
+        "freshness": "data cutoff + stale status",
+        "limitations": "string[]",
+        "status": "completed|insufficient_information",
+        "usage": "tokens, model, duration"
+      }
+    }
+  ],
+  "future_scopes": "Planned scopes are not issuable until the corresponding capability is implemented.",
+  "examples": [
+    "app/integration/examples/tasks.json",
+    "app/integration/examples/books.json",
+    "app/integration/examples/learning_sessions.json"
+  ],
+  "schema_subset": {
+    "name": "paiagent-1",
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "common_keywords": [
+      "description",
+      "enum",
+      "title",
+      "type"
+    ],
+    "type_keywords": {
+      "object": [
+        "additionalProperties",
+        "properties",
+        "required"
+      ],
+      "array": [
+        "items",
+        "maxItems",
+        "minItems"
+      ],
+      "string": [
+        "format",
+        "maxLength",
+        "minLength"
+      ],
+      "number": [
+        "exclusiveMaximum",
+        "exclusiveMinimum",
+        "maximum",
+        "minimum"
+      ],
+      "integer": [
+        "exclusiveMaximum",
+        "exclusiveMinimum",
+        "maximum",
+        "minimum"
+      ],
+      "boolean": []
+    },
+    "root": "Non-nullable object; optional $schema with the exact dialect URI.",
+    "objects": "properties and additionalProperties:false required; required only references declared properties; names match [A-Za-z_][A-Za-z0-9_-]{0,63}.",
+    "nullable": "type may be [supported_type,\"null\"] in either order; absent optional fields are not null values.",
+    "arrays": "Single items schema required; maxItems 1..100 required; minItems optional.",
+    "strings": "maxLength 1..16384 required; minLength optional. NUL characters and invalid UTF-8 are rejected.",
+    "formats": [
+      "date",
+      "date-time",
+      "uuid"
+    ],
+    "date_time": "Calendar-valid RFC3339 timestamp with explicit offset; no leap seconds.",
+    "enums": "1..100 scalar values matching type/constraints; enum on object/array is unsupported.",
+    "bounds": "Finite numeric bounds with absolute value <= 1e308; lower bound cannot exceed upper bound.",
+    "annotations": "title/description at most 1000 characters each; structural metadata is tenant-shared, not a private content store.",
+    "limits": {
+      "schema_bytes": 32768,
+      "payload_bytes": 65536,
+      "schema_depth": 5,
+      "raw_json_depth": 16,
+      "properties_total": 100,
+      "field_mappings": 100
+    },
+    "unsupported": "All other keywords, including local/remote $ref, are rejected. No coercion, defaults, dynamic code or remote resolution.",
+    "mappings": {
+      "path": "JSON Pointer through object properties only, no arrays/wildcards; missing/null means unavailable.",
+      "roles": {
+        "search_text": "string; multiple",
+        "display_name": "string; singleton",
+        "event_time": "date-time string; singleton",
+        "quantity": "number/integer, explicit printable unit label of 1..64 characters; use 1 for dimensionless; no conversion",
+        "category": "string/integer/boolean; multiple",
+        "external_reference": "string; singleton, does not confer access to another object"
+      },
+      "duplicate": "Same path+role rejected."
+    }
+  }
+}

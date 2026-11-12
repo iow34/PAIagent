@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.controllers.documents import DocumentController
 from app.api.controllers.health import HealthController
+from app.api.controllers.integration import IntegrationController
 from app.api.controllers.knowledge import KnowledgeController
 from app.api.controllers.query import QueryController
 from app.api.controllers.search import SearchController
@@ -144,6 +145,7 @@ def create_app() -> Litestar:
     return Litestar(
         route_handlers=[
             HealthController,
+            IntegrationController,
             DocumentController,
             SearchController,
             QueryController,
@@ -165,7 +167,7 @@ def create_app() -> Litestar:
         },
         openapi_config=OpenAPIConfig(
             title="PAIagent API",
-            version="0.1.0",
+            version="0.2.0",
             components=Components(
                 security_schemes={
                     "ServiceAPIKey": SecurityScheme(

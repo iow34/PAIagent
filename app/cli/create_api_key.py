@@ -2,12 +2,14 @@ import argparse
 import asyncio
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config.settings import get_settings
-from app.db.models import ServiceAPIKey, Tenant
+from app.db.models import IntegrationSource, ServiceAPIKey, Tenant
 from app.db.postgres import open_database
 from app.security.api_keys import generate_api_key, hash_api_key
+from app.security.permissions import LEGACY_SCOPES, SCOPES
 
 
 async def issue_api_key(
@@ -15,15 +17,32 @@ async def issue_api_key(
     session_factory: async_sessionmaker[AsyncSession],
     tenant_id: UUID,
     name: str,
+    scopes: tuple[str, ...] = LEGACY_SCOPES,
+    source_ids: tuple[UUID, ...] | None = None,
 ) -> tuple[UUID, str]:
     """Create an API key and return its ID and secret value."""
 
+    if not scopes or set(scopes) - SCOPES:
+        raise ValueError("Specify at least one supported scope.")
+    if source_ids is not None and "legacy:*" in scopes:
+        raise ValueError("Legacy routes cannot be granted to source-restricted keys.")
     async with session_factory.begin() as session:
         tenant = await session.get(Tenant, tenant_id)
 
         if tenant is None:
             raise ValueError("A tenant with this identifier does not exist.")
 
+        if source_ids is not None:
+            owned = set(
+                await session.scalars(
+                    select(IntegrationSource.id).where(
+                        IntegrationSource.tenant_id == tenant_id,
+                        IntegrationSource.id.in_(source_ids),
+                    )
+                )
+            )
+            if not source_ids or owned != set(source_ids):
+                raise ValueError("Every source must exist in the selected tenant.")
         raw_key = generate_api_key()
 
         api_key = ServiceAPIKey(
@@ -31,6 +50,10 @@ async def issue_api_key(
             name=name,
             key_hash=hash_api_key(raw_key),
             is_active=True,
+            scopes=list(dict.fromkeys(scopes)),
+            source_ids=None
+            if source_ids is None
+            else [str(value) for value in dict.fromkeys(source_ids)],
         )
 
         session.add(api_key)
@@ -41,7 +64,13 @@ async def issue_api_key(
     return key_id, raw_key
 
 
-async def run(*, tenant_id: UUID, name: str) -> None:
+async def run(
+    *,
+    tenant_id: UUID,
+    name: str,
+    scopes: tuple[str, ...] = LEGACY_SCOPES,
+    source_ids: tuple[UUID, ...] | None = None,
+) -> None:
     """Create an API key and release database resources."""
 
     settings = get_settings()
@@ -51,6 +80,8 @@ async def run(*, tenant_id: UUID, name: str) -> None:
             session_factory=database.session_factory,
             tenant_id=tenant_id,
             name=name,
+            scopes=scopes,
+            source_ids=source_ids,
         )
 
     print("API key created.")
@@ -76,6 +107,18 @@ def main() -> None:
         "--name", required=True, help="A clear key name, for example, local-backend."
     )
 
+    parser.add_argument(
+        "--scope",
+        action="append",
+        choices=sorted(SCOPES),
+        help="Repeat for each grant. Defaults to legacy:* and catalog:read.",
+    )
+    parser.add_argument(
+        "--source-id",
+        action="append",
+        type=UUID,
+        help="Repeat to restrict the key to existing sources. Omission allows all tenant sources.",
+    )
     args = parser.parse_args()
 
     name = args.name.strip()
@@ -88,6 +131,8 @@ def main() -> None:
             run(
                 tenant_id=args.tenant_id,
                 name=name,
+                scopes=tuple(args.scope) if args.scope else LEGACY_SCOPES,
+                source_ids=tuple(args.source_id) if args.source_id else None,
             )
         )
     except ValueError as error:
