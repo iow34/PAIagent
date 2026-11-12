@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from litestar import Request
 from litestar.di import NamedDependency
@@ -12,7 +12,7 @@ from app.security.context import AccessContext
 
 
 async def get_access_context(
-    request: Request,
+    request: Request[Any, Any, Any],
     user_id: Annotated[
         str,
         Parameter(

@@ -5,6 +5,8 @@ from functools import lru_cache
 import msgspec
 from dotenv import load_dotenv
 
+DEFAULT_GENERATION_MODEL = "gpt-5.4-mini-2026-03-17"
+
 
 class Settings(msgspec.Struct, frozen=True):
     database_url: str
@@ -13,10 +15,15 @@ class Settings(msgspec.Struct, frozen=True):
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
 
+    generation_model: str = DEFAULT_GENERATION_MODEL
+
     openai_timeout_seconds: float = 30.0
     openai_max_retries: int = 2
 
     def __post_init__(self) -> None:
+        if not self.generation_model.strip():
+            raise ValueError("OPENAI_GENERATION_MODEL must not be empty.")
+
         if self.embedding_model != "text-embedding-3-small":
             raise ValueError("This MVP currently supports text-embedding-3-small only.")
 
@@ -52,6 +59,10 @@ def get_settings() -> Settings:
     return Settings(
         database_url=os.environ["DATABASE_URL"],
         openai_api_key=os.environ["OPENAI_API_KEY"],
+        generation_model=os.environ.get(
+            "OPENAI_GENERATION_MODEL",
+            DEFAULT_GENERATION_MODEL,
+        ).strip(),
         openai_timeout_seconds=timeout_seconds,
         openai_max_retries=max_retries,
     )
