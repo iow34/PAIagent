@@ -1,6 +1,6 @@
-# PAIagent integration contract — steps 6–9
+# PAIagent integration contract — steps 6–10
 
-Contract version **0.5.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; six AI capabilities now execute through immutable declarative profiles with bounded synchronous runs and saved collected-data results.
+Contract version **0.6.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; six AI capabilities execute through immutable profiles with synchronous runs, durable background jobs, change/interval triggers and saved collected-data results.
 
 ## Install and run
 
@@ -18,7 +18,7 @@ Migration `a7d9e3f1b820` adds the seven `data_*` tables and a registry associati
 
 The schema registry and data lifecycle need PostgreSQL but do not make model calls. The existing application lifespan still expects the OpenAI configuration used by the document features.
 
-Live documentation: `/schema`. Machine-readable OpenAPI: `/schema/openapi.json`. The served OpenAPI describes implemented routes only. `GET /v1/capabilities` reports implemented capabilities, formats, limits and caller grants. `GET /v1/integration-contract` serves the bundled `app/integration/contract.json`, including implemented data/normalization/profile/result routes and explicitly **planned** durable jobs/triggers. Planned routes are not executable and are absent from live OpenAPI.
+Live documentation: `/schema`. Machine-readable OpenAPI: `/schema/openapi.json`. The served OpenAPI describes implemented routes only. `GET /v1/capabilities` reports implemented capabilities, formats, limits and caller grants. `GET /v1/integration-contract` serves the bundled `app/integration/contract.json`, including implemented data/normalization/profile/result routes and durable jobs and change/interval triggers. Managed memory remains a later step. Planned routes are not executable and are absent from live OpenAPI.
 
 ## Authentication and ownership
 
@@ -402,7 +402,7 @@ Profiles belong to **tenant + X-User-ID**, including their goals and settings. A
 | `GET /v1/profiles/{id}/results?limit=50&cursor=...` | Page of small result summaries (IDs, version, state, generated_at, freshness); fetch payload by ID. |
 | `GET /v1/results/{id}` | Saved envelope with freshly checked current/stale status. Never generates. Inline IDs are not persisted and return 404. |
 
-Page size is 1..100; cursors are exclusive UUIDs, not chronological offsets or snapshots. Authorization can leave a short/empty page with a next cursor. A successful HTTP request commits its writes. This step does not provide asynchronous jobs, schedules, triggers, idempotent run replay or a durable `GET /runs/{id}`. A timeout or transport failure should be handled by the client; an ambiguous HTTP response can occur after commit, so inspect saved result summaries before retrying an expensive request.
+Page size is 1..100; cursors are exclusive UUIDs, not chronological offsets or snapshots. Authorization can leave a short/empty page with a next cursor. A successful HTTP request commits its writes. The step-9 synchronous profile route remains compatible; step 10 below adds durable jobs, triggers and idempotent run replay. A timeout or transport failure should be handled by the client; an ambiguous HTTP response can occur after commit, so inspect saved result summaries before retrying an expensive request.
 
 ### Profile and run example
 
@@ -463,7 +463,7 @@ Two periods return primary/comparison aggregates plus primary-minus-comparison d
 
 ### Budgets, failure and lifecycle
 
-Defaults / hard maxima: records 1000/5000, file/inline fragments 1000/1000, source characters per call 24000/30000, model calls 16/32, input token reservation 64000/256000, total output reservation 16000/32000, per-call output 2000/4000, provider-phase seconds 50/50. Source JSON is limited to 4 MiB; result envelope to 8 MiB. Limits also have positive lower bounds in the schema. Input reservation conservatively charges UTF-8 bytes plus framing including system/schema; output reserves the complete per-call maximum, not just observed text. These are safe local reservations, not provider billing reports. Capability generation/embedding SDK clients disable retries; retrieval embedding counts as a model call. Existing legacy clients keep their existing retry policy.
+Defaults / hard maxima: records 1000/5000, file/inline fragments 1000/1000, source characters per call 24000/30000, model calls 16/32, input token reservation 64000/256000, total output reservation 16000/32000, per-call output 2000/4000, provider-phase seconds 50/50. Source JSON is limited to 4 MiB; result envelope to 8 MiB. Limits also have positive lower bounds in the schema. Input reservation conservatively charges UTF-8 bytes plus framing including system/schema; output reserves the complete per-call maximum, not just observed text. These are safe local reservations, not provider billing reports. Step-10 tenant admission may further clamp these per-profile bounds (including provider-phase seconds to 40); the effective budget appears in RunView. Capability generation/embedding SDK clients disable retries; retrieval embedding counts as a model call. Existing legacy clients keep their existing retry policy.
 
 If any selected dataset/period fails to meet `minimum_samples` (default 1), no generation occurs and the data state is insufficient; exact metrics can still be returned. Inline minimum counts inputs, not fragments. `422 generation_budget` signals exhausted call/token budget; `422 metric_group_limit` means too many groups; `422 size_limit` means source/result JSON too large; `504 capability_timeout` is the deadline; `502 invalid_generation` covers refusal, incomplete/invalid output, provider errors or unverified/duplicate evidence IDs. Existing successful results remain saved. A successful insufficient-data result is a separate record; no prior result is overwritten.
 
@@ -474,3 +474,120 @@ Collected runs capture the collection mutation signature under the same owner lo
 Erasing any dependent object/observation physically removes results for its affected collections, including results based on absence/counts and corrected observation chains. Scope erasure also deletes profiles referencing that scope; user erasure removes all private profiles/results, including inline-only profile settings. In-flight work cannot save behind an erasure fence or recreate an erased result. Profile deletion cascades its versions/results. Collected successes persist until explicit deletion; no automatic expiry is configured in this step. Backups/source queues/provider operational storage remain outside live application erasure.
 
 Local resume/checkpoints: `docs/STEP9_PROGRESS.md`. Verification command: `PYTHONWARNINGS=ignore .venv/bin/python tests/run_postgres_tests.py --all`. Tests use temporary PostgreSQL/pgvector and fake providers or local MockTransport, never paid model calls. Those checks establish API/computation/lifecycle behavior, not real model quality. `docs/` and `tests/` remain ignored under the existing repository policy.
+
+## Step 10 — durable execution, triggers and polling (contract 0.6.0)
+
+Migration `d0a6b4c8e152` follows step 9 and adds `analysis_runs`, `analysis_triggers`, `analysis_tenant_usage` and a unique optional `analysis_results.run_id` association. It preserves existing profiles/results. Downgrade removes jobs, trigger configuration and quota history; it drops the run association while preserving result contents. Apply migrations before starting either process:
+
+```sh
+.venv/bin/alembic upgrade head
+# Web process, as before:
+.venv/bin/uvicorn app.asgi:create_app --factory --host 127.0.0.1 --port 8000
+# Separate process, using the same configured PostgreSQL and model settings:
+.venv/bin/python -m app.jobs.worker --concurrency 4 --poll-seconds 1
+```
+
+The worker fails startup if the job schema is unavailable. Keep it running under your process supervisor. `--concurrency` accepts 1..16 and `--poll-seconds` 0.1..30. `--once` drains work currently due, then exits; it leaves delayed retries and future scheduled work in PostgreSQL. No Redis, external broker, checkpointer or web-process task is required for durability. Multiple worker processes coordinate through the database; task objects in a worker only execute jobs already committed there.
+
+New key grants: **`runs:write`** for durable submission/cancellation and **`runs:read`** for polling/listing. Submission also requires `ai:run` and `data:read`; trigger configuration requires these plus `profiles:write`. Result GET uses `results:read` + `data:read`; source grants always apply. Existing keys gain no permissions automatically. The compatible `POST /profiles/{id}/runs` continues to require `ai:run` (+ `data:read` for collections) and now shares tenant admission with background work.
+
+### Submit and consume a result
+
+```sh
+curl -sS "$BASE_URL/v1/runs" \
+  -H "Authorization: Bearer $PAIAGENT_API_KEY" -H "X-User-ID: $USER_ID" \
+  -H 'Content-Type: application/json' -d "{
+    \"profile_id\":\"$PROFILE_ID\",
+    \"input\":{\"version\":1},
+    \"idempotency_key\":\"analysis-request-001\",\"mode\":\"async\"}"
+
+# Read id from the accepted RunView:
+curl -sS "$BASE_URL/v1/runs/$RUN_ID" \
+  -H "Authorization: Bearer $PAIAGENT_API_KEY" -H "X-User-ID: $USER_ID"
+# When status=succeeded and result_id is non-null:
+curl -sS "$BASE_URL/v1/results/$RESULT_ID" \
+  -H "Authorization: Bearer $PAIAGENT_API_KEY" -H "X-User-ID: $USER_ID"
+```
+
+For `search`/`query`, also pass `input.query`; optional explicit bounded query history is supported. The profile version is required and pinned at submission even if another version is registered before execution. `idempotency_key` is a printable non-blank string, at most 100 characters, scoped to tenant+user. The same key/profile/RunInput returns the same job and eventual result; different input conflicts with `409 run_idempotency_conflict`. `mode` is a transport preference and is not part of that computation identity. Erasure clears fingerprints and leaves terminal identities unusable for replay.
+
+`mode=async` returns **202 RunView** after commit, without a provider call in the request. `mode=sync` may execute the admitted job immediately: it returns **200** for terminal state or **202** if work is queued, retrying, or lacks an available slot. Another worker may already own it, in which case poll its ID. The same run/status/result contract is used in either case. A succeeded run with `data_state=insufficient_data` is an execution success; inspect the separate result data state. GET routes never run AI.
+
+The bundled independent client submits, polls and reads a structured result without importing service internals:
+
+```sh
+# Provide the inbound service key via this environment variable, not a CLI argument.
+export PAIAGENT_SERVICE_KEY="$PAIAGENT_API_KEY"
+.venv/bin/python -m app.integration.run_client \
+  --base-url "$BASE_URL" --user-id "$USER_ID" \
+  --profile-id "$PROFILE_ID" --version 1 --idempotency-key analysis-request-002
+```
+
+The client has a 120-second polling deadline; a timeout does not cancel the durable job. Poll again or explicitly cancel. For query/search add `--query '...'`. This client was exercised in a separate process through a real localhost HTTP socket and a worker with a fake provider; that verifies integration boundaries, not real AI quality.
+
+| Route | Input / result |
+| --- | --- |
+| `POST /v1/runs` | `{profile_id,input:RunInput,idempotency_key,mode:async|sync}` → RunView, 202 or synchronous terminal 200. |
+| `GET /v1/runs/{run_id}` | RunView with status, attempts/max_attempts, effective budget, lease expiry, availability/start/finish timestamps, input boundary/data-as-of, result ID and safe error code. Input text/history and lease token are never exposed. |
+| `GET /v1/runs` | `cursor`, `limit=1..100`, optional `status` and `profile_id`; private authorized RunPage. |
+| `POST /v1/runs/{run_id}/cancel` | 200 RunView. Pending/running becomes cancelled; terminal states remain unchanged. |
+| `PUT /v1/profiles/{id}/triggers` | Full TriggerInput configuration with pinned version; cancels prior active trigger jobs and rotates its revision. |
+| `GET /v1/profiles/{id}/triggers` | TriggerView; `enabled` is effective state, `config.enabled` is the submitted preference. `error_code` explains automatic disable. |
+| `GET /v1/profiles/{id}/results` | Existing summary page additionally filters `version` and `data_state`; full payload remains a separate result GET. |
+
+Run pages use exclusive UUID cursors, not chronological offsets or snapshot pagination. Lists can have short/empty pages with a next cursor after source filtering. Cross-owner/cross-tenant IDs are unavailable. Cancellation does not disable future trigger events or erase prior successful results; disable the trigger or use privacy erasure for those separate operations. Cancel-vs-save serializes under the owner lock: if save wins, cancellation returns succeeded; if cancellation wins, the attempt cannot persist output.
+
+### Configure change and interval triggers
+
+```sh
+curl -sS -X PUT "$BASE_URL/v1/profiles/$PROFILE_ID/triggers" \
+  -H "Authorization: Bearer $PAIAGENT_API_KEY" -H "X-User-ID: $USER_ID" \
+  -H 'Content-Type: application/json' -d '{
+    "version":1,"enabled":true,"on_change":true,
+    "debounce_seconds":10,"max_wait_seconds":120,"interval_seconds":3600}'
+```
+
+There is one current trigger configuration per profile, pinned to an explicit version. Manual runs are always available with the corresponding grants. An enabled automatic configuration requires `on_change`, an interval, or both. Search/query profiles also need a non-blank trigger `query`; `limit` defaults to 5. Trigger-driven runs use the profile's collection selection and budgets; inline-only profiles cannot be scheduled. PUT with `{"version":1,"enabled":false}` disables automatic execution and cancels its active jobs. Reconfiguration cancels old trigger jobs, not independent manual runs.
+
+On-change activation establishes a baseline of currently received data; it reacts to subsequent mutations. Submit a manual run if you also want immediate analysis of existing content. Ingestion already commits an outbox receipt in the same owner transaction as the data change. The scheduler reads the full mutation fingerprint and commits **job creation/coalescing + trigger cursor advancement atomically**. It does not rely on a callback from the web process. Queue pressure leaves the dirty cursor unadvanced, so the intent is retried later.
+
+Multiple changes coalesce into at most one pending job per trigger, enforced by a PostgreSQL partial unique index. Debounce is 1..300 seconds (default 10); maximum wait is 1..600 seconds (default 120), at least debounce. Repeated changes defer a pending job only up to that first enqueue's maximum wait. A running attempt can have one pending successor. If data changed during that attempt, its stale save is rejected; retry yields to the pending successor when present. Saving a result does not create a source outbox receipt, preventing self-trigger loops.
+
+`interval_seconds` is 60..2592000 (30 days). Optional `start_at` is an aware timestamp; otherwise the first tick is now+interval. This is an elapsed-time schedule aligned to that anchor, not a cron expression or a local wall-clock schedule. Missed ticks during downtime coalesce into one job; the next due time advances past now without drifting the anchor. If both time and change triggers are due, they share the same pending recalculation. Profile periods remain the explicit periods declared in that immutable version; scheduling does not invent a moving time window. Update the profile/trigger version if the selection must change.
+
+A revoked key or removed required grant disables a trigger with `execution_forbidden`; explicitly reconfigure it using a valid authorized key after rotation. Effective enable state is returned separately from submitted config. Candidate polling rotates by last-check time in bounded batches; the default worker checks up to 50 configurations per scheduling pass.
+
+### Recovery, budgets and fairness
+
+Jobs transition `pending → running → succeeded|failed|cancelled`; retry and expired-lease recovery can return them to pending. Every claim gets a fresh random token and a **90-second lease**. Provider work executes outside database transactions. The whole attempt has an effective-profile deadline plus 10 seconds, at most 50 seconds under the default tenant policy; its provider phase is at most 40 seconds. A worker process killed without cleanup leaves the job recoverable after lease expiry. Recovery applies backoff and the attempt limit; no graph checkpoint is required.
+
+Profile Budget now also accepts `max_attempts=1..3` (default 3, including the first attempt), `retry_seconds=1..60` (default 5), and `tool_calls=0`. No tools or commands can be enabled by configuration. Retries use exponential delay from retry_seconds, capped at 300 seconds. Provider/timeout/transient-storage/input-changed failures are retryable; invalid declarations, forbidden access and internal errors terminate. A crash consumes an attempt/reservation. Inline synchronous runs have one attempt and cannot be replayed by a worker because their input was never stored. Cancelled jobs cannot be resumed through retry.
+
+At attempt start the worker records a data boundary and server data-as-of under the owner lock. Before save it checks source/fences, live key grants, lease/token, trigger revision and the mutation signature again. `409 input_changed` rejects output generated against a changing collection and requests a bounded retry. New on-change data can retain a successor independently of that active attempt, so an older success cannot clear a newer intent. A unique result association and one transaction for result insertion plus succeeded job prevent duplicate visible results when execution is repeated. Model requests themselves may be repeated after a crash; leases cannot revoke work already accepted by an upstream provider.
+
+Tenant limits are server policy (`app/jobs/runtime.py`) and cannot be raised by a profile:
+
+| Limit | Default server bound |
+| --- | --- |
+| Active jobs (pending + running) | 100 per tenant, shared across users/keys |
+| Running attempts | 2 per tenant, across worker/API processes |
+| Trigger configurations | 100 per tenant |
+| UTC-day attempts / model-call reservations | 200 / 3200 per tenant |
+| UTC-day input / output token reservations | 10000000 / 2000000 per tenant |
+| Per-attempt rows / fragments | 5000 / 1000, further limited by profile |
+| Per-attempt calls / input / output reservations | 16 / 128000 / 16000, further limited by profile |
+| Provider phase / whole attempt / lease | 40s / at most 50s / 90s |
+
+A short PostgreSQL admission lock serializes queue/quota accounting across processes. It is never held during generation. Claims use `FOR UPDATE SKIP LOCKED`, exclude saturated tenants and rotate eligible tenants by last-claim time. One tenant therefore cannot occupy every slot in the default four-slot worker. [PostgreSQL queue-locking semantics](https://www.postgresql.org/docs/current/sql-select.html). Actual throughput and multi-tenant latency still require load measurement at the intended deployment volume.
+
+A profile budget is clamped to server maxima and persisted at admission; RunView exposes it. Reservations charge each entire admitted attempt's model/input/output allowance, even on failure or crash, rather than assuming unused provider budget can be refunded. Generation already uses conservative byte-based input reservations and complete per-call output reservations. Search calls can therefore reserve more than they consume. Tenant-day exhaustion postpones a queued job until the next UTC midnight (`daily_budget`); it does not call the provider. Active queue/concurrency overflow on immediate synchronous admission returns 429 with a safe code and retry header. Cancellation does not refund spent reservations. Different tenants have independent budgets and reserved concurrency.
+
+### Authorization, retention and erasure
+
+Each accepted job stores the authenticating key ID and its original scope/source upper bounds, never the raw secret. The worker intersects those bounds with the key's current live grants at claim, start and save; later grant expansion cannot broaden an accepted job. Profile version, owner, source restrictions and erasure fences remain authoritative. Scheduled work has the same checks. Worker database credentials are operator credentials and must remain private.
+
+Durable jobs store their bounded collection query/history until explicit erasure/profile deletion; there is no automatic job-content expiry in this MVP. Status/list endpoints never return that input. Explicit inline input remains supported only through the synchronous profile endpoint: its text, history, result and content fingerprint are not persisted. Content-free run metadata, grants, budget and timestamps are retained so it can participate in admission/accounting. The inline result ID still returns 404 on saved-result GET.
+
+Object/observation erasure cancels affected collection jobs, clears their query/history/fingerprint, invalidates the lease and removes dependent results; this also covers results derived from absence, counts and corrected observations. Collection/source erasure cascades affected profiles, trigger configurations and jobs; user erasure removes all its private profiles/jobs, including inline run metadata. Tenant usage keeps only content-free reservation totals. An in-flight worker cannot save behind these changes. Historical request settings in a profile are separate private configuration; remove the profile when those settings themselves need erasure. Operational backups/provider retention remain outside live application cleanup.
+
+Verification and resume instructions are in `docs/STEP10_PROGRESS.md`. Tests cover manual/change/interval paths, independent HTTP polling, concurrent claims, tenant quotas/fairness, retry/timeout, revoked keys, changes/deletion during generation, and an actual worker subprocess killed with SIGKILL then restarted against the same temporary PostgreSQL. Providers are fake/local MockTransport; paid OpenAI quality and production load are not established by these checks. No working-database migration or deployed worker is implied by saving this implementation.

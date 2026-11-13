@@ -12,3 +12,5 @@ class AccessContext:
     user_id: str
     scopes: tuple[str, ...] = ("legacy:*", "catalog:read")
     source_ids: tuple[UUID, ...] | None = None
+
+    api_key_id: UUID | None = None

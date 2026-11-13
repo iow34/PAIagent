@@ -41,6 +41,9 @@ class Metric(msgspec.Struct, forbid_unknown_fields=True):
 
 
 class Budget(msgspec.Struct, forbid_unknown_fields=True):
+    max_attempts: Annotated[int, msgspec.Meta(ge=1, le=3)] = 3
+    retry_seconds: Annotated[int, msgspec.Meta(ge=1, le=60)] = 5
+    tool_calls: Literal[0] = 0
     max_records: Annotated[int, msgspec.Meta(ge=1, le=5000)] = 1000
     max_fragments: Annotated[int, msgspec.Meta(ge=1, le=1000)] = 1000
     context_chars: Annotated[int, msgspec.Meta(ge=2000, le=30000)] = 24000

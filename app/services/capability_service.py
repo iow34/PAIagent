@@ -18,7 +18,7 @@ from app.capabilities.context import collect, snapshot
 from app.capabilities.generation import GenerationError, Meter
 from app.capabilities.metrics import aggregate, in_period
 from app.capabilities.results import validate_result
-from app.capabilities.types import CapabilityResult, ProfileInput, RunInput
+from app.capabilities.types import Budget, CapabilityResult, ProfileInput, RunInput
 from app.capabilities.validation import validate_profile, validate_selection
 from app.capabilities.workflow import CapabilityWorkflow, lexical_rank
 from app.db.models import (
@@ -218,13 +218,29 @@ class CapabilityService(DataService):
         ]
 
     async def run(
-        self, profile_id: UUID, data: RunInput, generator, embeddings
+        self, profile_id: UUID, data: RunInput, generator, embeddings, *, attempt=None
     ) -> dict[str, Any]:
         require_scope(self.context, "ai:run")
         data = msgspec.convert(msgspec.to_builtins(data), type=RunInput)
         bounded_json(msgspec.to_builtins(data), 1048576)
         async with self.transaction(write=True) as repo:
             _row, config = await self.load(repo, profile_id, data.version)
+            if attempt is not None:
+                from app.jobs.runtime import clamp
+
+                job, _ = await attempt.check(repo)
+                if job.profile_id != profile_id or job.profile_version != data.version:
+                    from app.jobs.runtime import LeaseLost
+
+                    raise LeaseLost(
+                        "Attempt does not match the pinned profile version."
+                    )
+                config = clamp(
+                    msgspec.structs.replace(
+                        config, budget=msgspec.convert(job.budget, type=Budget)
+                    ),
+                    attempt.limits,
+                )
             await self.configuration(repo, config, writable=True)
             if config.selections:
                 require_scope(self.context, "data:read")
@@ -238,6 +254,9 @@ class CapabilityService(DataService):
                 raise ContractError("search/query require a non-blank query.")
             collections = [s.collection_id for s in config.selections]
             signature = await snapshot(repo, self.context, collections)
+            attempt_as_of = (
+                await attempt.start(repo, signature) if attempt is not None else None
+            )
             schemas = await self.configuration(repo, config)
             if collections:
                 samples, sources, coverage = await collect(
@@ -277,7 +296,7 @@ class CapabilityService(DataService):
                     }
                 ]
         bounded_json(sources, 4 * 1024 * 1024)
-        data_as_of = datetime.now(UTC)
+        data_as_of = attempt_as_of or datetime.now(UTC)
         # The whole provider phase has a deadline and no live database transaction.
         meter = Meter(config.budget, generator)
         metrics = aggregate(config, samples, schemas)
@@ -348,7 +367,10 @@ class CapabilityService(DataService):
                 extra={"code": "invalid_generation"},
             ) from error
         now = datetime.now(UTC)
-        run_id, result_id = uuid4(), uuid4()
+        run_id, result_id = (
+            (attempt.run_id if attempt is not None else uuid4()),
+            uuid4(),
+        )
         processed = set(result["processed_ids"])
         # Include all exact-metric row dependencies as well as all processed text.
         if metrics:
@@ -406,6 +428,8 @@ class CapabilityService(DataService):
         async with self.transaction(write=True) as repo:
             await self.load(repo, profile_id, data.version)
             await self.configuration(repo, config, writable=True)
+            if attempt is not None:
+                await attempt.check(repo)
             if signature != await snapshot(repo, self.context, collections):
                 conflict(
                     "input_changed",
@@ -415,6 +439,7 @@ class CapabilityService(DataService):
                 await repo.add(
                     AnalysisResult(
                         id=result_id,
+                        run_id=attempt.run_id if attempt is not None else None,
                         tenant_id=self.context.tenant_id,
                         user_id=self.context.user_id,
                         profile_id=profile_id,
@@ -424,6 +449,8 @@ class CapabilityService(DataService):
                         snapshot=signature,
                     )
                 )
+            if attempt is not None:
+                await attempt.succeed(repo)
         return envelope
 
     async def result(self, result_id):
@@ -448,7 +475,9 @@ class CapabilityService(DataService):
                 "freshness": "current" if row.snapshot == current else "stale",
             }
 
-    async def results(self, profile_id, cursor=None, limit=50):
+    async def results(
+        self, profile_id, cursor=None, limit=50, version=None, data_state=None
+    ):
         require_scope(self.context, "results:read")
         require_scope(self.context, "data:read")
         async with self.transaction(write=True) as repo:
@@ -464,6 +493,12 @@ class CapabilityService(DataService):
                 *owner(AnalysisResult, self.context),
                 AnalysisResult.profile_id == profile_id,
             )
+            if version is not None:
+                stmt = stmt.where(AnalysisResult.profile_version == version)
+            if data_state is not None:
+                stmt = stmt.where(
+                    AnalysisResult.envelope["data_state"].astext == data_state
+                )
             if cursor:
                 stmt = stmt.where(AnalysisResult.id > cursor)
             rows = (

@@ -1,6 +1,6 @@
 """Declarative profile registry and finite synchronous AI runs."""
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import msgspec
@@ -31,6 +31,7 @@ from app.security.authentication import get_access_context
 from app.security.context import AccessContext
 from app.services.capability_service import CapabilityService
 from app.services.embedding_service import EmbeddingService
+from app.services.job_service import JobService
 
 
 def capability_service(
@@ -143,9 +144,9 @@ class CapabilityController(Controller):
         capability_generator: NamedDependency[OpenAIGenerator],
         capability_embeddings: NamedDependency[EmbeddingService],
     ) -> CapabilityResult:
-        result = await capability_service.run(
-            profile_id, data, capability_generator, capability_embeddings
-        )
+        result = await JobService(
+            capability_service.factory, capability_service.context
+        ).sync(profile_id, data, capability_generator, capability_embeddings)
 
         return msgspec.convert(result, type=CapabilityResult)
 
@@ -159,7 +160,10 @@ class CapabilityController(Controller):
 
     @get(
         "/profiles/{profile_id:uuid}/results",
-        opt={"required_scope": "results:read", "query_parameters": ("cursor", "limit")},
+        opt={
+            "required_scope": "results:read",
+            "query_parameters": ("cursor", "limit", "version", "data_state"),
+        },
     )
     async def results(
         self,
@@ -167,7 +171,12 @@ class CapabilityController(Controller):
         capability_service: NamedDependency[CapabilityService],
         cursor: UUID | None = None,
         limit: PageLimit = 50,
+        version: SchemaVersion | None = None,
+        data_state: Literal["sufficient", "partial", "insufficient_data"] | None = None,
     ) -> ResultPage:
         return msgspec.convert(
-            await capability_service.results(profile_id, cursor, limit), type=ResultPage
+            await capability_service.results(
+                profile_id, cursor, limit, version, data_state
+            ),
+            type=ResultPage,
         )

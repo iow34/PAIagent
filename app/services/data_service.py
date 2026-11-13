@@ -869,6 +869,9 @@ class DataService(IntegrationService):
                     )
                 )
             )
+        from app.jobs.lifecycle import erase_runs
+
+        await erase_runs(repo.session, self.context, impacted_collections)
         for collection_id in impacted_collections:
             await repo.session.execute(
                 delete(AnalysisResult).where(
@@ -1086,6 +1089,9 @@ class DataService(IntegrationService):
                         )
                     )
                 )
+                from app.jobs.lifecycle import erase_runs
+
+                await erase_runs(repo.session, self.context, collection_ids)
                 for cid in collection_ids:
                     await repo.session.execute(
                         delete(AnalysisResult).where(

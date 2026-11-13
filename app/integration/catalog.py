@@ -1,5 +1,6 @@
 """Discoverable, versioned contract. Availability never implies authorization."""
 
+from dataclasses import asdict
 from typing import Any
 
 from app.integration.validation import (
@@ -10,6 +11,7 @@ from app.integration.validation import (
     MAX_SCHEMA_BYTES,
     MAX_STRING,
 )
+from app.jobs.runtime import LIMITS
 from app.security.context import AccessContext
 
 REQUEST_BYTES = 98304
@@ -19,8 +21,8 @@ REQUESTS_PER_MINUTE = 120
 def catalog(context: AccessContext) -> dict[str, Any]:
     return {
         "api_version": "1",
-        "contract_version": "0.5.0",
-        "completed_step": 9,
+        "contract_version": "0.6.0",
+        "completed_step": 10,
         "registry": {
             "sources": True,
             "collections": True,
@@ -33,9 +35,11 @@ def catalog(context: AccessContext) -> dict[str, Any]:
             "imports_and_reconciliation": True,
             "privacy_erasure": True,
             "transactional_outbox": True,
-            "background_execution": False,
+            "background_execution": True,
             "analysis_profiles": True,
             "successful_analysis_results": True,
+            "manual_change_interval_triggers": True,
+            "durable_run_polling": True,
         },
         "capabilities": [
             {
@@ -70,7 +74,7 @@ def catalog(context: AccessContext) -> dict[str, Any]:
                     "input": "RunInput + immutable ProfileInput version",
                     "result": "CapabilityResult",
                     "scope": "ai:run; data:read for collections",
-                    "execution": "bounded synchronous; collected results persisted; inline ephemeral",
+                    "execution": "bounded synchronous or durable PostgreSQL jobs; collected results persisted; inline sync only",
                 }
                 for name in [
                     "search",
@@ -106,8 +110,12 @@ def catalog(context: AccessContext) -> dict[str, Any]:
                 "external_reference",
             ],
             "profiles_available": True,
+            "triggers_path": "/v1/profiles/{profile_id}/triggers",
+            "run_creation_path": "/v1/runs",
+            "run_status_path": "/v1/runs/{run_id}",
         },
         "limits": {
+            "tenant_execution": asdict(LIMITS),
             "registry_request_bytes": REQUEST_BYTES,
             "data_request_bytes": 1048576,
             "normalization_request_bytes": 6291456,

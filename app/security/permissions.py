@@ -23,6 +23,8 @@ SCOPES = frozenset(
         "profiles:read",
         "profiles:write",
         "ai:run",
+        "runs:read",
+        "runs:write",
         "results:read",
     }
 )

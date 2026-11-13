@@ -1,11 +1,12 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -662,6 +663,7 @@ class AnalysisProfileVersion(Base):
 class AnalysisResult(DataOwner, Base):
     __tablename__ = "analysis_results"
     __table_args__ = (
+        UniqueConstraint("run_id", name="uq_analysis_results_run"),
         ForeignKeyConstraint(
             ["tenant_id", "user_id", "profile_id"],
             [
@@ -688,6 +690,11 @@ class AnalysisResult(DataOwner, Base):
         ),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "analysis_runs.id", ondelete="CASCADE", name="fk_analysis_results_run"
+        )
+    )
     profile_id: Mapped[uuid.UUID] = mapped_column()
     profile_version: Mapped[int] = mapped_column()
     # Conservative collection dependencies include empty selections (absence is evidence).
@@ -697,3 +704,139 @@ class AnalysisResult(DataOwner, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class AnalysisTrigger(DataOwner, Base):
+    __tablename__ = "analysis_triggers"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id", "profile_id"],
+            [
+                "analysis_profiles.tenant_id",
+                "analysis_profiles.user_id",
+                "analysis_profiles.id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["profile_id", "profile_version"],
+            [
+                "analysis_profile_versions.profile_id",
+                "analysis_profile_versions.version",
+            ],
+            ondelete="CASCADE",
+        ),
+        Index("ix_analysis_triggers_poll", "enabled", "checked_at"),
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    profile_version: Mapped[int] = mapped_column()
+    key_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("service_api_keys.id", ondelete="SET NULL")
+    )
+    grant_scopes: Mapped[list[str]] = mapped_column(JSONB)
+    grant_sources: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True))
+    collection_ids: Mapped[list[str]] = mapped_column(JSONB)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    revision: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    last_signature: Mapped[str] = mapped_column(String(64))
+    next_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+
+
+class AnalysisRun(DataOwner, Base):
+    __tablename__ = "analysis_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "(status = 'running') = (lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)",
+            name="ck_analysis_run_lease",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id", "profile_id"],
+            [
+                "analysis_profiles.tenant_id",
+                "analysis_profiles.user_id",
+                "analysis_profiles.id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["profile_id", "profile_version"],
+            [
+                "analysis_profile_versions.profile_id",
+                "analysis_profile_versions.version",
+            ],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "idempotency_key",
+            name="uq_analysis_run_idempotency",
+        ),
+        CheckConstraint(
+            "status IN ('pending','running','succeeded','failed','cancelled')",
+            name="ck_analysis_run_status",
+        ),
+        CheckConstraint(
+            "attempts >= 0 AND max_attempts BETWEEN 1 AND 3",
+            name="ck_analysis_run_attempts",
+        ),
+        Index("ix_analysis_runs_due", "status", "available_at", "tenant_id"),
+        Index("ix_analysis_runs_owner", "tenant_id", "user_id", "id"),
+        Index(
+            "uq_analysis_trigger_pending",
+            "trigger_id",
+            unique=True,
+            postgresql_where=text("status = 'pending' AND trigger_id IS NOT NULL"),
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    profile_id: Mapped[uuid.UUID] = mapped_column()
+    profile_version: Mapped[int] = mapped_column()
+    key_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("service_api_keys.id", ondelete="SET NULL")
+    )
+    grant_scopes: Mapped[list[str]] = mapped_column(JSONB)
+    grant_sources: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True))
+    collection_ids: Mapped[list[str]] = mapped_column(JSONB)
+    required_scopes: Mapped[list[str]] = mapped_column(JSONB)
+    trigger_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("analysis_triggers.profile_id", ondelete="SET NULL")
+    )
+    trigger_revision: Mapped[uuid.UUID | None] = mapped_column()
+    budget: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    input: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    idempotency_key: Mapped[str | None] = mapped_column(String(100))
+    reason: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column()
+    retry_seconds: Mapped[int] = mapped_column()
+    ephemeral: Mapped[bool] = mapped_column(default=False)
+    lease_token: Mapped[uuid.UUID | None] = mapped_column()
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    input_boundary: Mapped[str | None] = mapped_column(String(64))
+    data_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+
+
+class AnalysisTenantUsage(Base):
+    __tablename__ = "analysis_tenant_usage"
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    calls: Mapped[int] = mapped_column(default=0)
+    input_tokens: Mapped[int] = mapped_column(default=0)
+    output_tokens: Mapped[int] = mapped_column(default=0)
+    last_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

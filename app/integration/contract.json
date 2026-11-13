@@ -1,7 +1,7 @@
 {
   "api_version": "1",
-  "contract_version": "0.5.0",
-  "status": "Steps 6–9 implemented: registry, data lifecycle, format normalization, six bounded synchronous capabilities and immutable analysis profiles. Durable jobs/triggers remain step 10.",
+  "contract_version": "0.6.0",
+  "status": "Steps 6–10 implemented: durable PostgreSQL runs, worker, outbox/interval triggers and polling result delivery.",
   "ownership": {
     "tenant": "Derived exclusively from the API key.",
     "registry": "Tenant-shared metadata guarded by operation and source grants.",
@@ -198,40 +198,10 @@
     "retention": "No automatic expiry in MVP: content remains until explicit deletion. Content-free identity markers/fences persist indefinitely; identities are not reusable. Reconnection requires an explicitly new object/collection/source or user identity outside the erased boundary. Source-side queues/backups/provider retention are owned by their operators; this API erases live application content, not external storage.",
     "imports": "Atomic parts (0..100 snapshots, max 1 MiB), 1-based part <=10000, immutable snapshot_id+boundary+completeness. final declares the last part; out-of-order parts are allowed. Identical part replay returns saved acknowledgements. Reconciliation is read-only and paginated; no absent-object deletion. Source must capture a consistent snapshot plus an opaque change-log cursor and continue delivery after that cursor. API stores the boundary but cannot verify an external log.",
     "completeness": "GET coverage reports source_sequence high watermark, missing ranges (at most 100 + truncation flag), unsequenced events, snapshots and erased receipts. GET import status distinguishes declared completeness from all parts received. history_complete is always false in this MVP; snapshots, contiguous received sequence prefixes and source declarations do not prove complete historical behavior.",
-    "background": "Data and data_outbox invalidation are committed in one owner-serialized transaction. No AI calls, indexing worker or scheduled analysis is triggered in step 7. A future worker must re-authorize context and source, reject fences/deleted evidence and compare input versions under the same owner lock before persisting results."
+    "background": "Ingestion and its outbox mutation receipt commit in one owner transaction. The PostgreSQL worker/scheduler now consumes this durable intent by fingerprint, commits job plus trigger cursor atomically, and executes with live key/source/fence/lease checks. No result outbox loop. Indexing remains an explicit separate API operation."
   },
-  "planned_routes": [
-    {
-      "method": "POST",
-      "path": "/v1/runs",
-      "step": 10,
-      "scope": "runs:write",
-      "request": {
-        "profile_id": "UUID",
-        "profile_version": "positive integer",
-        "mode": "sync|async",
-        "input": "persisted selection or explicit one-off payload",
-        "idempotency_key": "bounded external ID"
-      },
-      "response": "200 completed result for sync, 202 run for async; unknown capability/configuration is rejected"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/runs/{run_id}",
-      "step": 10,
-      "scope": "runs:read",
-      "response": {
-        "id": "UUID",
-        "status": "queued|running|succeeded|failed|cancelled",
-        "result_id": "UUID or null",
-        "error": "structured error or null",
-        "created_at": "UTC",
-        "started_at": "UTC or null",
-        "finished_at": "UTC or null"
-      }
-    }
-  ],
-  "future_scopes": "profiles:read, profiles:write, ai:run and results:read are issuable. Collected runs/results additionally require data:read. Durable job scopes remain planned.",
+  "planned_routes": [],
+  "future_scopes": "runs:read and runs:write are issuable. Runs also require ai:run and data:read for collections; no existing key gains scopes implicitly.",
   "examples": [
     "app/integration/examples/tasks.json",
     "app/integration/examples/books.json",
@@ -1341,6 +1311,24 @@
           "title": "Budget",
           "type": "object",
           "properties": {
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3,
+              "default": 3
+            },
+            "retry_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 5
+            },
+            "tool_calls": {
+              "enum": [
+                0
+              ],
+              "default": 0
+            },
             "max_records": {
               "type": "integer",
               "minimum": 1,
@@ -1811,6 +1799,24 @@
           "title": "Budget",
           "type": "object",
           "properties": {
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3,
+              "default": 3
+            },
+            "retry_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 5
+            },
+            "tool_calls": {
+              "enum": [
+                0
+              ],
+              "default": 0
+            },
             "max_records": {
               "type": "integer",
               "minimum": 1,
@@ -2219,6 +2225,24 @@
           "title": "Budget",
           "type": "object",
           "properties": {
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3,
+              "default": 3
+            },
+            "retry_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 5
+            },
+            "tool_calls": {
+              "enum": [
+                0
+              ],
+              "default": 0
+            },
             "max_records": {
               "type": "integer",
               "minimum": 1,
@@ -2725,8 +2749,8 @@
     "time": "Aware half-open [start,end). time_field defaults to delivery occurred_at or a selected date-time path. Null/missing time excluded by periods, otherwise missing_time interval bucket. IANA timezone changes calendar buckets, never timestamp interpretation. Day/week(Monday)/month bucket labels are local start dates, including DST. Comparison periods are non-overlapping and use the same selection/filter.",
     "metrics": "count counts received rows; sum/average/min/max require quantity mapping+unit, one selection per metric; no unit conversion. Null/missing quantities skipped. Empty/all-null numeric aggregates null; ungrouped empty count 0. Scalar category grouping preserves types, null/missing share one group. At most 100 groups/buckets per metric/period. Exact input exceeding max_records rejected, never silently sampled. Finite nonzero quantity magnitudes 1e-324..1e308, decimal precision 650 ROUND_HALF_EVEN. Values/differences are decimal strings; average denominator is non-null count. Comparison differences primary-minus-comparison align identical group and absolute calendar bucket; missing group/bucket null, never assumed zero.",
     "retention": "Collected successful results (including insufficient_data) persist until explicit erasure/profile deletion. No auto expiry. Inline-only profiles have selections=[]; up to 10 explicit text inputs/500000 total characters; inputs/history/results never written to DB or managed memory; no inline periods or exact metrics. Profiles themselves are persisted, so never put private inline text in profile goals. Responses store=false, no server logs of prompts. Provider operational retention is governed separately by provider/account policy.",
-    "budgets": "Per-run bounded sources, records, fragments, model calls, input/output token reservations and time. Input reservation conservatively uses UTF-8 bytes + framing including system/schema; output reserves each full max_output_tokens. Capability clients have zero SDK retries. 4MiB selected-source JSON, 8MiB result envelope. search/query rank a bounded sample and always report partial; record projected-field lexical matching, authorized indexed-file cosine with RRF k=60. Other non-summary capabilities use first bounded text batch and disclose partial. Summary processes all selected batches then reduces; budget exhaustion fails explicitly. No hidden scheduling or background retries.",
-    "freshness": "Owner-locked collection outbox signature before/after provider; any collection mutation rejects save 409 input_changed. GET recomputes current/stale, never calls provider. Conservative collection-wide dependencies include absent rows. Erasure purges affected collection results, including correction chains, and cannot race-save them. Scope erasure deletes affected profiles; user erasure deletes all profiles. Run UUID is not a durable job/status endpoint in this step.",
+    "budgets": "Per-run bounded sources, records, fragments, model calls, input/output token reservations and time. Input reservation conservatively uses UTF-8 bytes + framing including system/schema; output reserves each full max_output_tokens. Capability clients have zero SDK retries. 4MiB selected-source JSON, 8MiB result envelope. search/query rank a bounded sample and always report partial; record projected-field lexical matching, authorized indexed-file cosine with RRF k=60. Other non-summary capabilities use first bounded text batch and disclose partial. Summary processes all selected batches then reduces; budget exhaustion fails explicitly. Durable retries/scheduling require the documented run/trigger APIs; indexing is still explicit. Step10: API synchronous profiles and durable attempts share tenant admission; see background_execution.",
+    "freshness": "Owner-locked collection outbox signature before/after provider; any collection mutation rejects save 409 input_changed. GET recomputes current/stale, never calls provider. Conservative collection-wide dependencies include absent rows. Erasure purges affected collection results, including correction chains, and cannot race-save them. Scope erasure deletes affected profiles; user erasure deletes all profiles. API-generated run UUIDs now identify durable status metadata in /v1/runs/{run_id}; inline synchronous output remains ephemeral. Internal non-admitted service calls are not public job submissions. Durable jobs use lease/token/live-key fences and atomically commit result plus succeeded state.",
     "minimum_samples": "Each selected dataset and each requested period must meet the configured number of received rows; inline uses input count. Otherwise no generation, data_state=insufficient_data; exact metrics still returned. complete_selection describes pinned filtered selection only, never proves full external history.",
     "provider": "OpenAI Responses strict JSON schema, store=false, no tools. Incomplete/refused/invalid output and unverified/duplicate source IDs rejected with 502. Failed/time-limited/budget/stale attempts do not overwrite previous success. Schema/source-ID validation does not prove semantic support or causality; real-model evaluation remains separate.",
     "payload_json_schemas": {
@@ -3379,5 +3403,885 @@
       "response": "ResultPage of small summaries; GET each result for payload",
       "implemented_step": 9
     }
-  ]
+  ],
+  "background_execution": {
+    "schemas": {
+      "CreateRun": {
+        "$ref": "#/$defs/CreateRun",
+        "$defs": {
+          "CreateRun": {
+            "title": "CreateRun",
+            "type": "object",
+            "properties": {
+              "profile_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "input": {
+                "$ref": "#/$defs/RunInput"
+              },
+              "idempotency_key": {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              "mode": {
+                "enum": [
+                  "async",
+                  "sync"
+                ],
+                "default": "async"
+              }
+            },
+            "required": [
+              "profile_id",
+              "input",
+              "idempotency_key"
+            ],
+            "additionalProperties": false
+          },
+          "RunInput": {
+            "title": "RunInput",
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "query": {
+                "type": "string",
+                "maxLength": 2000,
+                "default": ""
+              },
+              "inline": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/InlineInput"
+                },
+                "maxItems": 10,
+                "default": []
+              },
+              "history": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/HistoryMessage"
+                },
+                "maxItems": 10,
+                "default": []
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "default": 5
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          "InlineInput": {
+            "title": "InlineInput",
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "maxLength": 500000,
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1,
+                "default": "inline"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          "HistoryMessage": {
+            "title": "HistoryMessage",
+            "type": "object",
+            "properties": {
+              "role": {
+                "enum": [
+                  "assistant",
+                  "user"
+                ]
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              }
+            },
+            "required": [
+              "role",
+              "content"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "RunView": {
+        "$ref": "#/$defs/RunView",
+        "$defs": {
+          "RunView": {
+            "title": "RunView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "profile_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "profile_version": {
+                "type": "integer"
+              },
+              "status": {
+                "enum": [
+                  "cancelled",
+                  "failed",
+                  "pending",
+                  "running",
+                  "succeeded"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "change",
+                  "manual",
+                  "schedule",
+                  "sync"
+                ]
+              },
+              "attempts": {
+                "type": "integer"
+              },
+              "max_attempts": {
+                "type": "integer"
+              },
+              "budget": {
+                "$ref": "#/$defs/Budget"
+              },
+              "lease_expires_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "available_at": {
+                "type": "string"
+              },
+              "started_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "finished_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "input_boundary": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "data_as_of": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "result_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ephemeral": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "profile_id",
+              "profile_version",
+              "status",
+              "reason",
+              "attempts",
+              "max_attempts",
+              "budget",
+              "lease_expires_at",
+              "created_at",
+              "available_at",
+              "started_at",
+              "finished_at",
+              "input_boundary",
+              "data_as_of",
+              "result_id",
+              "error_code",
+              "ephemeral"
+            ],
+            "additionalProperties": false
+          },
+          "Budget": {
+            "title": "Budget",
+            "type": "object",
+            "properties": {
+              "max_attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "default": 3
+              },
+              "retry_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "default": 5
+              },
+              "tool_calls": {
+                "enum": [
+                  0
+                ],
+                "default": 0
+              },
+              "max_records": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5000,
+                "default": 1000
+              },
+              "max_fragments": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+                "default": 1000
+              },
+              "context_chars": {
+                "type": "integer",
+                "minimum": 2000,
+                "maximum": 30000,
+                "default": 24000
+              },
+              "model_calls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32,
+                "default": 16
+              },
+              "input_tokens": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 256000,
+                "default": 64000
+              },
+              "output_tokens": {
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 32000,
+                "default": 16000
+              },
+              "per_call_output_tokens": {
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 4000,
+                "default": 2000
+              },
+              "seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 50
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        }
+      },
+      "RunPage": {
+        "$ref": "#/$defs/RunPage",
+        "$defs": {
+          "RunPage": {
+            "title": "RunPage",
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/RunView"
+                }
+              },
+              "next_cursor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "next_cursor"
+            ],
+            "additionalProperties": false
+          },
+          "RunView": {
+            "title": "RunView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "profile_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "profile_version": {
+                "type": "integer"
+              },
+              "status": {
+                "enum": [
+                  "cancelled",
+                  "failed",
+                  "pending",
+                  "running",
+                  "succeeded"
+                ]
+              },
+              "reason": {
+                "enum": [
+                  "change",
+                  "manual",
+                  "schedule",
+                  "sync"
+                ]
+              },
+              "attempts": {
+                "type": "integer"
+              },
+              "max_attempts": {
+                "type": "integer"
+              },
+              "budget": {
+                "$ref": "#/$defs/Budget"
+              },
+              "lease_expires_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "available_at": {
+                "type": "string"
+              },
+              "started_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "finished_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "input_boundary": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "data_as_of": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "result_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ephemeral": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "profile_id",
+              "profile_version",
+              "status",
+              "reason",
+              "attempts",
+              "max_attempts",
+              "budget",
+              "lease_expires_at",
+              "created_at",
+              "available_at",
+              "started_at",
+              "finished_at",
+              "input_boundary",
+              "data_as_of",
+              "result_id",
+              "error_code",
+              "ephemeral"
+            ],
+            "additionalProperties": false
+          },
+          "Budget": {
+            "title": "Budget",
+            "type": "object",
+            "properties": {
+              "max_attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "default": 3
+              },
+              "retry_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "default": 5
+              },
+              "tool_calls": {
+                "enum": [
+                  0
+                ],
+                "default": 0
+              },
+              "max_records": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5000,
+                "default": 1000
+              },
+              "max_fragments": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+                "default": 1000
+              },
+              "context_chars": {
+                "type": "integer",
+                "minimum": 2000,
+                "maximum": 30000,
+                "default": 24000
+              },
+              "model_calls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32,
+                "default": 16
+              },
+              "input_tokens": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 256000,
+                "default": 64000
+              },
+              "output_tokens": {
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 32000,
+                "default": 16000
+              },
+              "per_call_output_tokens": {
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 4000,
+                "default": 2000
+              },
+              "seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 50
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        }
+      },
+      "TriggerInput": {
+        "$ref": "#/$defs/TriggerInput",
+        "$defs": {
+          "TriggerInput": {
+            "title": "TriggerInput",
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "on_change": {
+                "type": "boolean",
+                "default": false
+              },
+              "interval_seconds": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 2592000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "start_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "debounce_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 300,
+                "default": 10
+              },
+              "max_wait_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600,
+                "default": 120
+              },
+              "query": {
+                "type": "string",
+                "maxLength": 2000,
+                "default": ""
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "default": 5
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "TriggerView": {
+        "$ref": "#/$defs/TriggerView",
+        "$defs": {
+          "TriggerView": {
+            "title": "TriggerView",
+            "type": "object",
+            "properties": {
+              "profile_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "config": {
+                "$ref": "#/$defs/TriggerInput"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "revision": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "next_due_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "last_checked_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "profile_id",
+              "config",
+              "enabled",
+              "revision",
+              "next_due_at",
+              "last_checked_at",
+              "error_code"
+            ],
+            "additionalProperties": false
+          },
+          "TriggerInput": {
+            "title": "TriggerInput",
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "on_change": {
+                "type": "boolean",
+                "default": false
+              },
+              "interval_seconds": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 2592000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "start_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "debounce_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 300,
+                "default": 10
+              },
+              "max_wait_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600,
+                "default": 120
+              },
+              "query": {
+                "type": "string",
+                "maxLength": 2000,
+                "default": ""
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "default": 5
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "tenant_limits": {
+      "running": 2,
+      "pending": 100,
+      "triggers": 100,
+      "daily_attempts": 200,
+      "daily_calls": 3200,
+      "daily_input_tokens": 10000000,
+      "daily_output_tokens": 2000000,
+      "records": 5000,
+      "fragments": 1000,
+      "model_calls": 16,
+      "input_tokens": 128000,
+      "output_tokens": 16000,
+      "seconds": 40
+    },
+    "routes": [
+      {
+        "method": "POST",
+        "path": "/v1/runs",
+        "scope": "runs:write + ai:run + data:read",
+        "request": "CreateRun",
+        "response": "202 RunView; mode=sync returns 200 on terminal state, otherwise 202"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/runs",
+        "scope": "runs:read (+ data:read for collection runs)",
+        "query": [
+          "cursor",
+          "limit",
+          "status",
+          "profile_id"
+        ],
+        "response": "RunPage"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/runs/{run_id}",
+        "scope": "runs:read (+ data:read for collection runs)",
+        "response": "RunView"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/runs/{run_id}/cancel",
+        "scope": "runs:write (+ data:read for collection runs)",
+        "response": "200 RunView; terminal state unchanged"
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/profiles/{profile_id}/triggers",
+        "scope": "profiles:write + runs:write + ai:run + data:read",
+        "request": "TriggerInput",
+        "response": "TriggerView"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/profiles/{profile_id}/triggers",
+        "scope": "profiles:read",
+        "response": "TriggerView"
+      }
+    ],
+    "worker": "python -m app.jobs.worker --concurrency 4 --poll-seconds 1; --once drains currently due work only",
+    "states": "pending -> running -> succeeded|failed|cancelled; retry/expired-lease recovery -> pending with bounded backoff; max_attempts 1..3",
+    "leases": "90s lease, fresh UUID per attempt. Attempt has whole-execution deadline effective profile seconds+10 (max50). No heartbeat/checkpointer needed within that bounded lease. Expired attempt cannot save. Recovery after process loss waits for lease expiry and applies backoff. Pending work remains in PostgreSQL while web/worker is offline.",
+    "atomicity": "Existing ingestion+outbox receipt transaction is the durable recalculation intent. Scheduler checks full outbox fingerprint and commits coalesced job+trigger cursor together. Result insertion and succeeded run share the owner/lease-checked transaction; unique result.run_id prevents duplicate visible success.",
+    "triggers": "One configuration per owner-private profile, pinned version, captured API-key identity/grant caps. on_change observes mutations after activation baseline; debounce has bounded max_wait. Interval 60..2592000 seconds with optional aware start_at, default now+interval; UTC-duration schedule, no cron inference; missed ticks coalesce, next_due remains anchor-aligned. Result saves create no source outbox. Trigger changes cancel active work and rotate revision; authorization failure disables trigger until reconfigured. TriggerView.enabled is effective state; config.enabled is the submitted setting and may differ after automatic authorization disable.",
+    "freshness": "Input snapshot and data_as_of are recorded at each attempt start, profile version fixed from enqueue. Source changes reject stale save and retry within budget. A trigger can retain one pending successor while a run is active; superseded failed attempt yields to successor. Trigger queue pressure does not advance its dirty signature; changes are retried on later scheduler polls.",
+    "authorization": "Raw key secret is never stored. Enqueue captures key ID plus scope/source upper bounds. Worker intersects with current live key grants at claim/start/save; revoked/deleted keys or removed source/data/AI grants block processing/persistence. Owner/source/fences always rechecked. Job list/get never expose stored query/history.",
+    "retention": "Async inline is rejected. Collection query/history are persisted in job.input until erasure/profile deletion; no auto-expiry in this MVP. Old sync inline remains text/output-ephemeral: only run metadata/grants/budget are retained; no content fingerprint is retained; request text/output not saved. Erasure clears job input/fingerprint, cancels attempts, removes dependent results; scoped profile deletion cascades jobs/triggers. Tenant usage keeps content-free reservation totals.",
+    "quotas": "Global short database admission lock serializes queue accounting across worker/API processes. At most 100 active jobs, 2 running jobs and 100 triggers per tenant. Claim order rotates tenants via last_claimed_at; saturated tenants do not block eligible other tenants. Effective profile budget is clamped to server maxima and persisted at admission. UTC daily reservations charge full call/input/output allowances per attempt, including failed/crashed work; no optimistic refunds. Daily quota defers jobs to next UTC midnight; active queue overflow returns429. Cancellation does not refund reservations.",
+    "polling": "GET /runs and GET /results never generate. Job UUID and result UUID are separate; result_id only exists for persisted successful collected output. Idempotency key is owner-scoped, immutable profile+RunInput fingerprint; mode is a delivery preference, not a new computation. Different body conflicts409. Same completed request returns same run/result. Server errors are safe codes only; no prompts/provider/SQL details."
+  }
 }

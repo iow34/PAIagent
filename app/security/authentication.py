@@ -63,6 +63,7 @@ async def get_access_context(
         )
 
     context = AccessContext(
+        api_key_id=api_key.id,
         tenant_id=api_key.tenant_id,
         user_id=user_id,
         scopes=tuple(api_key.scopes),
