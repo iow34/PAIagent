@@ -22,7 +22,13 @@ def catalog(context: AccessContext) -> dict[str, Any]:
     return {
         "api_version": "1",
         "contract_version": "0.7.0",
-        "completed_step": 11,
+        "completed_step": 12,
+        "documentation": {
+            "guide": "/developer/",
+            "interactive": "/schema",
+            "openapi": "/schema/openapi.json",
+            "download": "/developer/openapi.json",
+        },
         "registry": {
             "sources": True,
             "collections": True,

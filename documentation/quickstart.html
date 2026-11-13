@@ -1,0 +1,62 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>End-to-end quickstart</title><style>body{font:17px/1.6 system-ui;max-width:1050px;margin:2rem auto;padding:0 1rem}pre{overflow:auto;background:#f3f4f6;padding:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:.5rem}a{color:#125ac5}code{font-size:.9em}</style><nav><a href="index.html">Developer guide</a> · <a href="/schema">Interactive API</a> · <a href="openapi.json">OpenAPI download</a></nav><main><h1>End-to-end quickstart</h1>
+<p>First follow <a href="operations.html">installation and key issuance</a>. Run the API and worker. Install <code>httpx</code> in your client environment (already included in server requirements). Keep the service key in an environment variable, never in CLI arguments:</p>
+<pre><code class="language-sh">export PAIAGENT_URL=http://127.0.0.1:8000
+export PAIAGENT_USER_ID=demo-user
+# Set PAIAGENT_SERVICE_KEY securely to the issued PAIagent service key.
+.venv/bin/python documentation/examples/quickstart.py
+</code></pre>
+<p>This independent Python process imports no server services. It uses HTTP to:</p>
+<ol>
+<li>Create a fresh source and the tasks, books and learning-session collections.</li>
+<li>Register immutable record/event schemas and semantic mappings.</li>
+<li>Validate and persist snapshots and an independent event; replay each identical envelope to demonstrate deduplication.</li>
+<li>Attach a Markdown file to a book object using multipart <code>file</code> and JSON <code>envelope</code> parts.</li>
+<li>Create a search profile pinned to schema version 1; submit <code>/v1/runs</code> and replay the same body/idempotency key.</li>
+<li>Poll pending/running until terminal and read the typed result using <code>result_id</code>.</li>
+<li>Configure both an on-change trigger and an hourly trigger, then deliver a new selected record version or an independent event. Page profiles with <code>limit=1</code>.</li>
+</ol>
+<p>The default search uses JSON lexical evidence and does not index the uploaded file or call a model. It verifies protocol integration without generation cost. Each invocation creates another demo source, and the enabled trigger can create later runs. Keep the printed IDs to inspect or clean up this data. Output includes demo payloads; do not use this stdout pattern with private production content.</p>
+<p>To call another capability with the same schema/profile API:</p>
+<pre><code class="language-sh">.venv/bin/python documentation/examples/quickstart.py --capability analyze --mode sync
+.venv/bin/python documentation/examples/quickstart.py --capability query
+.venv/bin/python documentation/examples/quickstart.py --capability summarize
+.venv/bin/python documentation/examples/quickstart.py --capability extract
+.venv/bin/python documentation/examples/quickstart.py --capability recommend
+</code></pre>
+<p>Generation modes use your configured provider and can consume tokens. The same HTTP script supports all six registered templates. <code>analyze</code> computes exact declared metrics server-side and grounds generated commentary in them. Profile minimum samples and evidence bounds can produce <code>partial</code> or <code>insufficient_data</code>; do not equate HTTP success with sufficient evidence. Read the result's <code>payload</code>, <code>sources</code>, <code>coverage</code>, <code>limitations</code> and <code>freshness</code>. See <a href="client-behavior.html">result semantics</a> and <a href="reference.html">full reference</a>.</p>
+<p>The same client can bind a profile to another domain using ordinary declarations from <a href="examples/domain-bindings.json">domain-bindings.json</a>:</p>
+<pre><code class="language-sh">.venv/bin/python documentation/examples/quickstart.py --domain books --capability search
+.venv/bin/python documentation/examples/quickstart.py --domain learning_sessions --capability analyze
+</code></pre>
+<p>Books select record fields and page quantities; learning sessions select event fields in history mode and elapsed seconds. These bindings change only the client-supplied profile and delivery envelope. No server files are edited.</p>
+<h2>Inspect and consume with curl</h2>
+<p>The commands below use the IDs printed by the script. <code>jq</code> is only a local JSON selection tool.</p>
+<pre><code class="language-sh">curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/capabilities&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_SERVICE_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot;
+curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/collections/$COLLECTION_ID/schemas/record/1&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_SERVICE_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot;
+
+# Generate KEY once; retain it and the exact request body across retries.
+KEY=demo-manual-run-1
+jq -n --arg profile &quot;$PROFILE_ID&quot; --arg key &quot;$KEY&quot; \
+  '{profile_id:$profile,input:{version:1,query:&quot;звіт&quot;},idempotency_key:$key,mode:&quot;async&quot;}' | \
+  curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/runs&quot; \
+    -H &quot;Authorization: Bearer $PAIAGENT_SERVICE_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot; \
+    -H 'Content-Type: application/json' --data-binary @-
+
+curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/runs/$RUN_ID&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_SERVICE_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot;
+# When status=succeeded, read result_id from the response:
+curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/results/$RESULT_ID&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_SERVICE_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot;
+</code></pre>
+<p>For manual registry, snapshot, event, import, file/CSV, profile, trigger, memory, feedback and erasure requests, use the copyable curl/JSON examples in the <a href="reference.html">reference</a>. Dynamic payloads must pass the registered collection schema; no tenant/user ownership fields are accepted in the envelope. A complete request/response contract is downloadable as <a href="openapi.json">OpenAPI</a> and <a href="contract.json">semantic contract</a>.</p>
+<h2>Automatic result and cleanup</h2>
+<p>After the post-trigger selected-data mutation, poll <code>GET /v1/runs?profile_id=PROFILE_ID</code>. A run with <code>reason=change</code> should appear after the debounce and worker processing; hourly runs have <code>reason=schedule</code>. Read each successful <code>result_id</code> through the same result endpoint. Overlapping changes coalesce. The manual result becomes stale after the mutation; an automatic run reads the new boundary. Polling is the implemented delivery mechanism; no webhook or streaming result transport is promised.</p>
+<p>Disable the demo trigger before leaving it unattended:</p>
+<pre><code class="language-sh">curl --fail-with-body -sS -X PUT &quot;$PAIAGENT_URL/v1/profiles/$PROFILE_ID/triggers&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_SERVICE_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot; \
+  -H 'Content-Type: application/json' -d '{&quot;version&quot;:1,&quot;enabled&quot;:false,&quot;query&quot;:&quot;звіт&quot;}'
+</code></pre>
+<p>Use the source/user erasure endpoint documented in the reference to remove demo content, or delete the demo profile to remove its trigger and dependent results. Registry metadata is tenant-shared and has no delete endpoint; use neutral demo names. Erasure fences intentionally prevent silent replay into a forgotten identity.</p>
+</main></html>

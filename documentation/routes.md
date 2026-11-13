@@ -1,0 +1,86 @@
+# Route index
+
+Generated from the running application's handlers. Use [OpenAPI](openapi.json) for request/response types, and [the reference](reference.md) for dynamic payload validation, ownership, and additional grants.
+
+The scope below is the handler's primary grant; composite operations can also require data, AI, memory or feedback grants. Source restrictions always apply. Legacy endpoints use `legacy:*`.
+
+| Method | Path | Primary scope |
+| --- | --- | --- |
+| GET | `/health` | `public` |
+| GET | `/v1/capabilities` | `catalog:read` |
+| GET | `/v1/collections/{collection_id:uuid}` | `collections:read` |
+| GET | `/v1/sources/{source_id:uuid}/collections` | `collections:read` |
+| POST | `/v1/sources/{source_id:uuid}/collections` | `collections:write` |
+| GET | `/v1/integration-contract` | `catalog:read` |
+| GET | `/v1/collections/{collection_id:uuid}/schemas` | `schemas:read` |
+| POST | `/v1/collections/{collection_id:uuid}/schemas` | `schemas:write` |
+| GET | `/v1/sources` | `sources:read` |
+| POST | `/v1/sources` | `sources:write` |
+| GET | `/v1/collections/{collection_id:uuid}/schemas/{kind:str}/{version:int}` | `schemas:read` |
+| GET | `/v1/sources/{source_id:uuid}` | `sources:read` |
+| POST | `/v1/collections/{collection_id:uuid}/validate` | `data:validate` |
+| POST | `/v1/events/{delivery_id:uuid}/corrections` | `data:write` |
+| GET | `/v1/collections/{collection_id:uuid}/coverage` | `data:read` |
+| DELETE | `/v1/collections/{collection_id:uuid}/data` | `data:delete` |
+| DELETE | `/v1/events/{delivery_id:uuid}` | `data:delete` |
+| GET | `/v1/events/{delivery_id:uuid}` | `data:read` |
+| DELETE | `/v1/records/{object_id:uuid}` | `data:delete` |
+| GET | `/v1/records/{object_id:uuid}` | `data:read` |
+| PUT | `/v1/records/{object_id:uuid}` | `data:write` |
+| DELETE | `/v1/sources/{source_id:uuid}/data` | `data:delete` |
+| DELETE | `/v1/users/me/data` | `data:delete` |
+| GET | `/v1/collections/{collection_id:uuid}/events` | `data:read` |
+| POST | `/v1/collections/{collection_id:uuid}/events` | `data:write` |
+| POST | `/v1/collections/{collection_id:uuid}/imports` | `data:write` |
+| GET | `/v1/imports/{import_id:uuid}` | `data:read` |
+| POST | `/v1/collections/{collection_id:uuid}/events/single` | `data:write` |
+| POST | `/v1/collections/{collection_id:uuid}/records/single` | `data:write` |
+| GET | `/v1/collections/{collection_id:uuid}/records` | `data:read` |
+| POST | `/v1/collections/{collection_id:uuid}/records` | `data:write` |
+| GET | `/v1/imports/{import_id:uuid}/reconciliation` | `data:read` |
+| GET | `/v1/records/{object_id:uuid}/versions` | `data:read` |
+| GET | `/v1/collections/{collection_id:uuid}/context` | `data:read` |
+| POST | `/v1/collections/{collection_id:uuid}/csv` | `data:write` |
+| GET | `/v1/evidence/{fragment_id:uuid}` | `data:read` |
+| POST | `/v1/collections/{collection_id:uuid}/files` | `data:write` |
+| POST | `/v1/collections/{collection_id:uuid}/index` | `data:write` |
+| POST | `/v1/collections/{collection_id:uuid}/normalize` | `data:write` |
+| POST | `/v1/collections/{collection_id:uuid}/search` | `data:read` |
+| GET | `/v1/profiles/{profile_id:uuid}/versions/{version:int}` | `profiles:read` |
+| POST | `/v1/profiles/{profile_id:uuid}/versions/{version:int}` | `profiles:write` |
+| GET | `/v1/profiles` | `profiles:read` |
+| POST | `/v1/profiles` | `profiles:write` |
+| DELETE | `/v1/profiles/{profile_id:uuid}` | `profiles:write` |
+| GET | `/v1/profiles/{profile_id:uuid}` | `profiles:read` |
+| GET | `/v1/results/{result_id:uuid}` | `results:read` |
+| GET | `/v1/profiles/{profile_id:uuid}/results` | `results:read` |
+| POST | `/v1/profiles/{profile_id:uuid}/runs` | `ai:run` |
+| POST | `/v1/runs/{run_id:uuid}/cancel` | `runs:write` |
+| GET | `/v1/runs` | `runs:read` |
+| POST | `/v1/runs` | `runs:write` |
+| GET | `/v1/profiles/{profile_id:uuid}/triggers` | `profiles:read` |
+| PUT | `/v1/profiles/{profile_id:uuid}/triggers` | `profiles:write` |
+| GET | `/v1/runs/{run_id:uuid}` | `runs:read` |
+| GET | `/v1/memory/settings` | `memory:read` |
+| PUT | `/v1/memory/settings` | `memory:write` |
+| POST | `/v1/memory/items/{item_id:uuid}/confirm` | `memory:write` |
+| DELETE | `/v1/memory/messages/{message_id:uuid}` | `memory:write` |
+| GET | `/v1/memory/messages/{message_id:uuid}` | `memory:read` |
+| PUT | `/v1/memory/messages/{message_id:uuid}` | `memory:write` |
+| POST | `/v1/memory/extractions` | `memory:write` |
+| DELETE | `/v1/results/{result_id:uuid}/feedback` | `feedback:write` |
+| GET | `/v1/results/{result_id:uuid}/feedback` | `feedback:read` |
+| POST | `/v1/results/{result_id:uuid}/feedback` | `feedback:write` |
+| DELETE | `/v1/memory` | `memory:write` |
+| DELETE | `/v1/memory/items/{item_id:uuid}` | `memory:write` |
+| GET | `/v1/memory/items/{item_id:uuid}` | `memory:read` |
+| GET | `/v1/memory/items` | `memory:read` |
+| POST | `/v1/memory/messages` | `memory:write` |
+| PUT | `/v1/memory/preferences` | `memory:write` |
+| GET | `/v1/feedback/profiles` | `feedback:read` |
+| POST | `/v1/documents/{document_id:uuid}/reindex` | `legacy:*` |
+| POST | `/v1/documents` | `legacy:*` |
+| POST | `/v1/search` | `legacy:*` |
+| POST | `/v1/query` | `legacy:*` |
+| GET | `/v1/documents/{document_id:uuid}/knowledge` | `legacy:*` |
+| POST | `/v1/documents/{document_id:uuid}/knowledge` | `legacy:*` |

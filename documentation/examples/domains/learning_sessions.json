@@ -1,0 +1,24 @@
+{
+  "collection": {"name": "learning_sessions", "description": "Independent observations, not changes to a task"},
+  "schema": {
+    "kind": "event", "version": 1,
+    "json_schema": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "subject": {"type": "string", "maxLength": 150},
+        "started": {"type": "string", "format": "date-time", "maxLength": 40},
+        "elapsed": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "reflection": {"type": ["string", "null"], "maxLength": 3000}
+      },
+      "required": ["subject", "started", "elapsed"]
+    },
+    "field_mappings": [
+      {"path": "/subject", "role": "display_name"},
+      {"path": "/started", "role": "event_time"},
+      {"path": "/elapsed", "role": "quantity", "unit": "second"},
+      {"path": "/reflection", "role": "search_text"}
+    ]
+  },
+  "operation": "observe",
+  "payload": {"subject": "SQL joins", "started": "2026-11-12T09:00:00+01:00", "elapsed": 2700, "reflection": "Практика із зовнішніми ключами"}
+}

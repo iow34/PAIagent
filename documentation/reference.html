@@ -1,0 +1,959 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Integration reference</title><style>body{font:17px/1.6 system-ui;max-width:1050px;margin:2rem auto;padding:0 1rem}pre{overflow:auto;background:#f3f4f6;padding:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:.5rem}a{color:#125ac5}code{font-size:.9em}</style><nav><a href="index.html">Developer guide</a> · <a href="/schema">Interactive API</a> · <a href="openapi.json">OpenAPI download</a></nav><main><h1>Integration reference</h1>
+<p>For a fresh installation use <a href="operations.html">operations</a>; for the complete HTTP onboarding use <a href="quickstart.html">quickstart</a>. This reference preserves detailed lifecycle examples. Commands assume the repository root. Older validation/delivery examples use <code>PAIAGENT_API_KEY</code>; the new standalone client uses <code>PAIAGENT_SERVICE_KEY</code>. Both mean the inbound service key, never the provider key.</p>
+<p>Contract version <strong>0.7.0</strong>, API prefix <strong>/v1</strong>. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; six AI capabilities execute through immutable profiles with synchronous runs, durable background jobs, change/interval triggers saved collected-data results, explicit managed memory and result feedback.</p>
+<h2>Install and run</h2>
+<p>Use the existing project virtual environment and configured <code>DATABASE_URL</code> / <code>OPENAI_API_KEY</code>:</p>
+<pre><code class="language-sh">.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/alembic upgrade head
+.venv/bin/uvicorn app.asgi:create_app --factory --host 127.0.0.1 --port 8000
+</code></pre>
+<p>Migration <code>f3a6c9d2e710</code> adds <code>integration_sources</code>, <code>integration_collections</code>, <code>integration_schemas</code> and API-key grants. It preserves existing documents and keys. Run migrations before starting this code. Existing keys receive <code>legacy:*</code> and <code>catalog:read</code>; they do not gain registry administration rights. Downgrade removes registry data and grants, so it is only appropriate for an intentional rollback.</p>
+<p>Migration <code>a7d9e3f1b820</code> adds the seven <code>data_*</code> tables and a registry association constraint. It preserves existing records, keys and documents; there were no general data tables before this migration. Downgrading it destroys ingested data, history, outbox and erasure fences, so never use downgrade as a way to reconnect an erased identity.</p>
+<p>The schema registry and data lifecycle need PostgreSQL but do not make model calls. The existing application lifespan still expects the OpenAI configuration used by the document features.</p>
+<p>Live documentation: <code>/schema</code>. Machine-readable OpenAPI: <code>/schema/openapi.json</code>. The served OpenAPI describes implemented routes only. <code>GET /v1/capabilities</code> reports implemented capabilities, formats, limits and caller grants. <code>GET /v1/integration-contract</code> serves the bundled <code>app/integration/contract.json</code>, including implemented data/normalization/profile/result routes and durable jobs and change/interval triggers. Opt-in managed memory and feedback are described below. Planned routes are not executable and are absent from live OpenAPI.</p>
+<h2>Authentication and ownership</h2>
+<p>Every integration request includes:</p>
+<pre><code class="language-http">Authorization: Bearer &lt;service-api-key&gt;
+X-User-ID: &lt;user-authenticated-by-your-backend&gt;
+Content-Type: application/json
+</code></pre>
+<p>The key fixes the tenant; the trusted backend authenticates its own user and supplies <code>X-User-ID</code> (1–255 characters, no surrounding whitespace or control characters). Client bodies cannot supply tenant/user ownership or <code>received_at</code>. No browser-facing secret key is intended.</p>
+<p>Sources, collections and schema definitions are <strong>tenant-shared configuration</strong>. They must not contain private user content in names, descriptions or enum values. A user ID is required consistently, but does not make a shared schema private. Registry access never grants access to stored user content. Existing document/search/query/knowledge operations still use <code>tenant_id + user_id</code>. General records/events use the same ownership boundary. Object identity is tenant + user + source + collection + external ID.</p>
+<p>Administrative issuance for an existing tenant:</p>
+<pre><code class="language-sh">.venv/bin/python -m app.cli.create_api_key \
+  --tenant-id &quot;$TENANT_ID&quot; --name integration-admin \
+  --scope catalog:read \
+  --scope sources:read --scope sources:write \
+  --scope collections:read --scope collections:write \
+  --scope schemas:read --scope schemas:write \
+  --scope data:validate --scope data:read --scope data:write --scope data:delete
+</code></pre>
+<p>The command prints the secret once; only its SHA-256 hash is stored. Fresh installs can provision a tenant using the administrative command in <a href="operations.html">operations</a>. Each <code>--scope</code> is an exact grant, with no implicit inheritance. To retain document functionality, explicitly add <code>--scope 'legacy:*'</code>. Omitting all <code>--scope</code> flags keeps the old CLI behavior (<code>legacy:*</code>, <code>catalog:read</code>). Unknown scopes are rejected; <code>profiles:read</code>, <code>profiles:write</code>, <code>ai:run</code>, <code>results:read</code> are also issuable; add these explicitly for profile execution. <code>data:write</code> does not imply <code>data:read</code> or <code>data:delete</code>; delete envelopes additionally require <code>data:delete</code>.</p>
+<p>After creating a source, issue a narrower integration key by repeating <code>--source-id &quot;$SOURCE_ID&quot;</code>. Each ID must belong to the selected tenant. Omission means all tenant sources, including future ones. A source-restricted key cannot create sources or use legacy document routes, which have no source association. Listing sources returns only allowed sources. A matching scope is still required for each operation. Schemas and profiles cannot extend grants. Profiles/results are private to tenant + user; every read/run also rechecks collection source grants.</p>
+<h2>Implemented routes</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Route</th>
+<th>Required scope</th>
+<th>Success</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/v1/capabilities</code></td>
+<td><code>catalog:read</code></td>
+<td>200 catalogue</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/integration-contract</code></td>
+<td><code>catalog:read</code></td>
+<td>200 versioned contract</td>
+</tr>
+<tr>
+<td>POST / GET</td>
+<td><code>/v1/sources</code></td>
+<td><code>sources:write</code> / <code>sources:read</code></td>
+<td>201 source / 200 page</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/sources/{source_id}</code></td>
+<td><code>sources:read</code></td>
+<td>200 source</td>
+</tr>
+<tr>
+<td>POST / GET</td>
+<td><code>/v1/sources/{source_id}/collections</code></td>
+<td><code>collections:write</code> / <code>collections:read</code></td>
+<td>201 collection / 200 page</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/collections/{collection_id}</code></td>
+<td><code>collections:read</code></td>
+<td>200 collection</td>
+</tr>
+<tr>
+<td>POST / GET</td>
+<td><code>/v1/collections/{collection_id}/schemas</code></td>
+<td><code>schemas:write</code> / <code>schemas:read</code></td>
+<td>201 schema / 200 page</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/collections/{collection_id}/schemas/{kind}/{version}</code></td>
+<td><code>schemas:read</code></td>
+<td>200 immutable version</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/collections/{collection_id}/validate</code></td>
+<td><code>data:validate</code></td>
+<td>200 dry-run result</td>
+</tr>
+</tbody>
+</table>
+<p>Source and collection creation use <code>{&quot;name&quot;:&quot;your-name&quot;,&quot;description&quot;:&quot;optional&quot;}</code>. Names are 1–100 characters, start with a lowercase ASCII letter and contain lowercase letters, digits, underscores or hyphens. Descriptions have at most 1000 characters. Source names are unique per tenant, collection names per source. IDs are server-generated UUIDs. No update or delete registry route is exposed in this step.</p>
+<p>Lists accept <code>limit=1..100</code> (default 50) and <code>cursor=&lt;next_cursor&gt;</code>. The schema list also accepts <code>kind=record|event</code>. Unknown/repeated query parameters are rejected. Results are <code>{&quot;items&quot;:[...],&quot;next_cursor&quot;:null}</code>. A non-null cursor continues ascending UUID order; this is not creation-time ordering or a snapshot under concurrent inserts. Start a fresh traversal when reconciling concurrent additions.</p>
+<h2>Three-domain quickstart</h2>
+<p>Set environment variables without committing or sharing their secret values:</p>
+<pre><code class="language-sh">export PAIAGENT_URL=http://127.0.0.1:8000
+export PAIAGENT_USER_ID=demo-user
+# Set PAIAGENT_API_KEY to the newly issued registry key.
+.venv/bin/python -m app.integration.quickstart
+</code></pre>
+<p>This independent HTTP client creates a uniquely named source, registers three collections/schemas, and validates three envelopes. It reads ordinary JSON examples from <code>examples/domains/</code> and uses the same endpoints for each domain:</p>
+<ul>
+<li><code>tasks.json</code>: state records with caption, phase, nullable estimate and nested details.</li>
+<li><code>books.json</code>: state records with heading, ISBN, page count and bounded labels array.</li>
+<li><code>learning_sessions.json</code>: independent observations with subject, start time, duration and reflection; no mutable task-like state is required.</li>
+</ul>
+<p>The script prints <code>valid: true</code> and <strong><code>persisted: false</code></strong>. It persists registry configuration only. Re-running creates another demo source. No core branch recognizes any of these domain names.</p>
+<p>The equivalent first requests with curl (<code>jq</code> is used only to extract IDs and select the example schema):</p>
+<pre><code class="language-sh">SOURCE_ID=$(curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/sources&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot; \
+  -H 'Content-Type: application/json' -d '{&quot;name&quot;:&quot;my-backend&quot;}' | jq -r .id)
+
+COLLECTION_ID=$(curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/sources/$SOURCE_ID/collections&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot; \
+  -H 'Content-Type: application/json' -d '{&quot;name&quot;:&quot;tasks&quot;}' | jq -r .id)
+
+jq '.schema' documentation/examples/domains/tasks.json | \
+  curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/collections/$COLLECTION_ID/schemas&quot; \
+    -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot; \
+    -H 'Content-Type: application/json' --data-binary @-
+
+jq -n --arg source &quot;$SOURCE_ID&quot; --arg collection &quot;$COLLECTION_ID&quot; \
+  '{api_version:&quot;1&quot;,source_id:$source,collection_id:$collection,schema_version:1,
+    operation:&quot;snapshot&quot;,external_id:&quot;item-1&quot;,object_version:1,
+    occurred_at:&quot;2026-11-12T10:00:00Z&quot;,payload:{caption:&quot;Write report&quot;,phase:&quot;todo&quot;}}' | \
+  curl --fail-with-body -sS &quot;$PAIAGENT_URL/v1/collections/$COLLECTION_ID/validate&quot; \
+    -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot; \
+    -H 'Content-Type: application/json' --data-binary @-
+</code></pre>
+<p>A duplicate registry name/version returns 409, not a silent update. After a lost POST response, GET/list the resource and compare its definition before proceeding. Registry POST does not implement <code>Idempotency-Key</code>. Data delivery uses the separate idempotency rules below.</p>
+<h2>Schema subset <code>paiagent-1</code></h2>
+<p>Registration body: <code>kind</code> (<code>record</code> or <code>event</code>), <code>version</code> (integer 1–2147483647), <code>json_schema</code>, and optional <code>field_mappings</code> (default empty). A collection has independent record/event version sequences. Version numbers need not be contiguous. Versions and mappings are immutable through this API even before any data exists. Register a new version for any change. Existing data will retain its explicit version; registration does not migrate or revalidate it. There is no implicit “latest”.</p>
+<p>Schemas use a bounded subset of <a href="https://json-schema.org/draft/2020-12/json-schema-validation">JSON Schema Draft 2020-12</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Type / feature</th>
+<th>Supported contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Root</td>
+<td>Non-nullable <code>object</code></td>
+</tr>
+<tr>
+<td>Every object</td>
+<td>Explicit <code>properties</code>, <code>additionalProperties: false</code>; optional <code>required</code> naming declared properties</td>
+</tr>
+<tr>
+<td>Field types</td>
+<td><code>object</code>, <code>array</code>, <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>; or <code>[type,&quot;null&quot;]</code> in either order</td>
+</tr>
+<tr>
+<td>Arrays</td>
+<td>One <code>items</code> schema, mandatory <code>maxItems</code> 1–100, optional <code>minItems</code>; nested structures share the depth limit</td>
+</tr>
+<tr>
+<td>Strings</td>
+<td>Mandatory <code>maxLength</code> 1–16384, optional <code>minLength</code> and <code>format</code></td>
+</tr>
+<tr>
+<td>Formats</td>
+<td><code>date</code>, <code>uuid</code>, or offset-bearing <code>date-time</code> (calendar-valid, no leap seconds); format validation is enabled</td>
+</tr>
+<tr>
+<td>Numeric constraints</td>
+<td>Finite bounds with <code>minimum</code>, <code>maximum</code>, <code>exclusiveMinimum</code>, <code>exclusiveMaximum</code>; absolute bounds at most 1e308</td>
+</tr>
+<tr>
+<td>Enum</td>
+<td>1–100 scalar values consistent with the field type/constraints; explicitly include null if it should be an enum option</td>
+</tr>
+<tr>
+<td>Annotations</td>
+<td>Optional <code>title</code> / <code>description</code>, at most 1000 characters each</td>
+</tr>
+<tr>
+<td>Dialect</td>
+<td>Optional root <code>$schema</code> equal to <code>https://json-schema.org/draft/2020-12/schema</code></td>
+</tr>
+<tr>
+<td>Structural limits</td>
+<td>At most 100 property declarations total; root depth 0, children through depth 5; property names match <code>[A-Za-z_][A-Za-z0-9_-]{0,63}</code></td>
+</tr>
+</tbody>
+</table>
+<p>Everything else is rejected, including <code>$ref</code> (local or remote), <code>$defs</code>, <code>allOf</code>, <code>anyOf</code>, <code>oneOf</code>, conditionals, regex patterns, <code>default</code>, <code>examples</code>, <code>additionalProperties: true</code> and boolean schemas. No remote resource is loaded. NUL characters and raw JSON nesting beyond 16 levels are rejected before database use. No implicit coercion or default injection occurs. Missing optional fields differ from explicit <code>null</code>; null is valid only when declared nullable.</p>
+<p>Validation uses <a href="https://python-jsonschema.readthedocs.io/en/stable/validate/"><code>jsonschema</code>'s Draft202012Validator and explicit format checking</a>, preceded by PAIagent's own subset/size/semantic checks. JSON Schema validation alone does not assign business meaning to a field.</p>
+<h2>Semantic mappings</h2>
+<p>Each mapping is <code>{&quot;path&quot;:&quot;/details/note&quot;,&quot;role&quot;:&quot;search_text&quot;}</code>; quantity adds <code>&quot;unit&quot;:&quot;hour&quot;</code>. Paths are JSON Pointers through declared object properties. Array traversal/wildcards are not supported. Nullable ancestors and fields are allowed; a missing/null value is unavailable, never an implicit zero or empty string.</p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Accepted field type</th>
+<th>Additional rules</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>search_text</code></td>
+<td>string</td>
+<td>Multiple fields allowed</td>
+</tr>
+<tr>
+<td><code>display_name</code></td>
+<td>string</td>
+<td>At most one</td>
+</tr>
+<tr>
+<td><code>event_time</code></td>
+<td>string</td>
+<td>Requires <code>format: date-time</code>; at most one</td>
+</tr>
+<tr>
+<td><code>quantity</code></td>
+<td>number / integer</td>
+<td>Explicit unit required; <code>&quot;1&quot;</code> means dimensionless</td>
+</tr>
+<tr>
+<td><code>category</code></td>
+<td>string / integer / boolean</td>
+<td>Multiple fields allowed</td>
+</tr>
+<tr>
+<td><code>external_reference</code></td>
+<td>string</td>
+<td>At most one; an external identifier, not authorization to fetch another object</td>
+</tr>
+</tbody>
+</table>
+<p>A field may have different roles, but duplicate path/role pairs are rejected. Units are labels of 1–64 characters; no automatic conversion is claimed. Mappings are saved and validated at registration; normalized retrieval and declared numeric analytics consume these roles. No model proposes/applies mappings automatically.</p>
+<h2>Record/event envelope</h2>
+<p>Required common fields: <code>api_version: &quot;1&quot;</code>, <code>source_id</code>, <code>collection_id</code>, <code>schema_version</code>, <code>operation</code>, <code>occurred_at</code>, <code>payload</code>. The validation URL and body source/collection must agree. Optional <code>metadata</code> accepts only <code>trace_id</code>, <code>origin</code>, <code>correlation_id</code> with 1–255 printable characters per value.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Schema kind</th>
+<th>IDs and version</th>
+<th>Payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>snapshot</code></td>
+<td>record</td>
+<td><code>external_id</code>, positive <code>object_version</code>; no <code>event_id</code></td>
+<td>Full state object</td>
+</tr>
+<tr>
+<td><code>upsert</code></td>
+<td>record</td>
+<td><code>external_id</code>, positive <code>object_version</code>, <code>event_id</code></td>
+<td>Full replacement state, not a patch</td>
+</tr>
+<tr>
+<td><code>delete</code></td>
+<td>record</td>
+<td>Same as upsert</td>
+<td><code>null</code></td>
+</tr>
+<tr>
+<td><code>observe</code></td>
+<td>event</td>
+<td><code>event_id</code>; optional <code>external_id</code>; no <code>object_version</code></td>
+<td>Independent observation object</td>
+</tr>
+</tbody>
+</table>
+<p>IDs have 1–255 characters without surrounding whitespace/control characters. Timestamps require an offset. <code>occurred_at</code> describes the external occurrence; ingestion assigns <code>received_at</code> in UTC. A semantic event-time field describes a time within the payload and need not equal the envelope timestamp. Ordering uses object versions, not arrival order. Observations do not implicitly modify any state record.</p>
+<p><code>/validate</code> checks current grants, schema existence, operation semantics and payload. It returns <code>{&quot;valid&quot;:true,&quot;schema_kind&quot;:&quot;record&quot;,&quot;schema_version&quot;:1,&quot;persisted&quot;:false}</code>. It does not assign <code>received_at</code>, reserve event IDs, guarantee later ingestion, index data, or delete anything. The same operation may become unauthorized before a later write. A delete envelope still requires an existing record schema version.</p>
+<h2>Limits and errors</h2>
+<p>Registry HTTP bodies: <strong>96 KiB</strong>. Content HTTP bodies: <strong>1 MiB</strong>, with at most 100 batch items. Compact UTF-8 schema JSON: <strong>32 KiB</strong>. Compact UTF-8 payload JSON: <strong>64 KiB</strong>. HTTP limits include whitespace; inner limits use compact serialization. At most 100 field mappings. Existing document uploads remain UTF-8 TXT/Markdown, at most 1 MiB.</p>
+<p>The registry uses <a href="https://docs.litestar.dev/main/usage/middleware/builtin-middleware.html">Litestar's rate-limit middleware</a>: <strong>120 requests/minute per peer IP, per application process</strong>, shared across registry and data routes. Failed requests count too. <code>X-Forwarded-For</code> does not change this identity. Behind a reverse proxy, its peer IP is shared; deployment-wide/key/tenant quotas require later infrastructure. <code>RateLimit-Limit</code>, <code>RateLimit-Remaining</code>, <code>RateLimit-Reset</code> and <code>RateLimit-Policy</code> describe the current window. On 429, wait at least <code>RateLimit-Reset</code> seconds and add jitter. Multiple workers do not share this in-memory quota.</p>
+<p>Errors preserve Litestar's <code>status_code</code>, <code>detail</code>, <code>extra</code> structure. Domain errors add <code>extra.code</code> and optionally <code>extra.issues</code>; framework errors can have <code>extra: null</code> or framework validation details, so clients must always handle the HTTP status. Payload issues include paths and failed keywords, without echoing private values. Up to 20 payload issues are returned.</p>
+<ul>
+<li>400: malformed JSON/DTO, invalid parameter, unknown/repeated query parameter, unknown DTO field.</li>
+<li>401: missing/invalid/inactive key; missing/invalid <code>X-User-ID</code> is a 400 input error.</li>
+<li>403: insufficient operation/source grant.</li>
+<li>404: missing or foreign-owner resource.</li>
+<li>409: duplicate registry name/schema version or conflicting immutable delivery/version/import.</li>
+<li>410: erased identity; stop replaying it.</li>
+<li>413: HTTP body too large; inner schema/payload limits return 422 with <code>size_limit</code>.</li>
+<li>422: unsupported/invalid schema, incompatible mapping, invalid envelope or payload.</li>
+<li>429: registry request frequency exceeded.</li>
+<li>500: storage/unexpected failure; private database exception text is not returned.</li>
+<li>503: temporary content storage failure; retry the identical delivery.</li>
+<li>504: content deadline exceeded; completed batch items may have committed, so retry unchanged.</li>
+</ul>
+<p>New required fields, removed fields or changed meanings require a new API major version; adding an optional response field can be compatible. Clients should ignore new response fields, while request/configuration fields are checked strictly. Schema versions are independent of API and profile versions.</p>
+<h2>Persisted content API</h2>
+<p>All content routes apply the caller's <code>tenant_id + X-User-ID</code>, even when a UUID is known. Registry read permission is neither required nor sufficient for data access. A source grant must authorize the collection for every read/write.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Route</th>
+<th>Scope</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/v1/collections/{collection_id}/records/single</code></td>
+<td><code>data:write</code></td>
+<td>One snapshot/upsert/delete acknowledgement</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/collections/{collection_id}/events/single</code></td>
+<td><code>data:write</code></td>
+<td>One upsert/delete/observe acknowledgement</td>
+</tr>
+<tr>
+<td>POST / GET</td>
+<td><code>/v1/collections/{collection_id}/records</code></td>
+<td><code>data:write</code> / <code>data:read</code></td>
+<td>Batch acknowledgement / current records</td>
+</tr>
+<tr>
+<td>POST / GET</td>
+<td><code>/v1/collections/{collection_id}/events</code></td>
+<td><code>data:write</code> / <code>data:read</code></td>
+<td>Batch acknowledgement / version and event history</td>
+</tr>
+<tr>
+<td>GET / PUT</td>
+<td><code>/v1/records/{object_id}</code></td>
+<td><code>data:read</code> / <code>data:write</code></td>
+<td>Current record / full upsert with a higher version</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/records/{object_id}/versions</code></td>
+<td><code>data:read</code></td>
+<td>Paginated version history</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/events/{delivery_id}</code></td>
+<td><code>data:read</code></td>
+<td>One history item</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/events/{delivery_id}/corrections</code></td>
+<td><code>data:write</code></td>
+<td>New observation linked to its predecessor</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/collections/{collection_id}/imports</code></td>
+<td><code>data:write</code></td>
+<td>Atomic snapshot part</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/imports/{import_id}</code></td>
+<td><code>data:read</code></td>
+<td>Parts received, boundary, completeness</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/imports/{import_id}/reconciliation</code></td>
+<td><code>data:read</code></td>
+<td>Current state versus snapshot manifest</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/collections/{collection_id}/coverage</code></td>
+<td><code>data:read</code></td>
+<td>Sequence gaps and history limitations</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/v1/records/{object_id}</code></td>
+<td><code>data:delete</code></td>
+<td>Erase object and dependent private content</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/v1/events/{delivery_id}</code></td>
+<td><code>data:delete</code></td>
+<td>Erase observation chain; state events erase the whole object</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/v1/collections/{collection_id}/data</code></td>
+<td><code>data:delete</code></td>
+<td>Erase this user's collection data</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/v1/sources/{source_id}/data</code></td>
+<td><code>data:delete</code></td>
+<td>Erase this user's source data</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/v1/users/me/data</code></td>
+<td><code>data:delete</code></td>
+<td>Erase all this user's data; unrestricted source grant required</td>
+</tr>
+</tbody>
+</table>
+<p>Successful content operations return HTTP 200. A <code>delete</code> envelope needs both <code>data:write</code> and <code>data:delete</code>. DELETE routes are explicit privacy erasure commands and do not require an incoming object version. They are permanent for that identity. Events are immutable: correct an observation using a <strong>new</strong> <code>event_id</code> and the <code>observe</code> operation at <code>/corrections</code>; the previous item gets <code>corrected_by_id</code>. Correct a record change with the next <code>object_version</code>. History includes both original and corrected observations; consumers must follow correction links before aggregating them.</p>
+<p>Use the base envelope above. Ingestion additionally accepts <code>source_sequence</code> and <code>references</code>. The older <code>/validate</code> endpoint validates only the base envelope; omit these two delivery fields there. Ingestion checks them itself. <code>source_sequence</code> is optional, integer 1–2147483647, unique in the <strong>owner + collection</strong> change stream; it is forbidden for snapshots. It is not a global source sequence or an object version. Use it only if the source guarantees a contiguous stream starting at 1 for that owner/collection.</p>
+<p><code>references</code> contains at most 20 <code>{ &quot;collection_id&quot;: &quot;UUID&quot;, &quot;external_id&quot;: &quot;opaque-id&quot; }</code> entries. Every target must be active, owned by the same user/tenant and belong to an allowed source. An observation's optional <code>external_id</code> is also a link to an active record in its own collection. Forward references fail with 404; deliver the target first. The schema's <code>external_reference</code> semantic role is an external label such as ISBN, not an instruction to resolve a local record.</p>
+<p>A state-change request can look like:</p>
+<pre><code class="language-json">{
+  &quot;api_version&quot;: &quot;1&quot;,
+  &quot;source_id&quot;: &quot;&lt;registered-source-uuid&gt;&quot;,
+  &quot;collection_id&quot;: &quot;&lt;registered-collection-uuid&gt;&quot;,
+  &quot;schema_version&quot;: 1,
+  &quot;operation&quot;: &quot;upsert&quot;,
+  &quot;external_id&quot;: &quot;item-1&quot;,
+  &quot;object_version&quot;: 2,
+  &quot;event_id&quot;: &quot;change-2&quot;,
+  &quot;source_sequence&quot;: 2,
+  &quot;occurred_at&quot;: &quot;2026-11-13T08:00:00Z&quot;,
+  &quot;payload&quot;: {&quot;caption&quot;: &quot;Write report&quot;, &quot;phase&quot;: &quot;done&quot;}
+}
+</code></pre>
+<p>Records expose their current payload, schema/object version, source/collection, metadata, resolved reference UUIDs and timestamps. History also exposes <code>event_id</code>, <code>source_sequence</code>, operation and <code>applied</code> (whether this delivery changed current state at acceptance). Events include snapshots as provenance. List records with optional <code>external_id</code>; list events with optional <code>external_id</code>, <code>occurred_from</code> inclusive and <code>occurred_before</code> exclusive. Both time bounds need offsets. All lists use ascending UUID pagination, <strong>not chronological order or a stable multi-page snapshot</strong>. Read immutable history by its version/time fields when building temporal analyses.</p>
+<h3>Acknowledgements, retries and transactions</h3>
+<p>Batch bodies are <code>{&quot;items&quot;:[envelope,...]}</code> with 1–100 envelopes and at most 1 MiB total. DTO errors (unknown fields, wrong types, overlong batches) reject the request before any write. Once the DTO parses, each item has its own transaction; semantic/payload/storage failures do not roll back accepted siblings. Check each acknowledgement, even on HTTP 200:</p>
+<pre><code class="language-json">{
+  &quot;batch_id&quot;: &quot;&lt;response-uuid&gt;&quot;,
+  &quot;items&quot;: [
+    {&quot;index&quot;: 0, &quot;status&quot;: &quot;accepted&quot;, &quot;delivery_id&quot;: &quot;&lt;history-uuid&gt;&quot;, &quot;object_id&quot;: &quot;&lt;record-uuid&gt;&quot;, &quot;received_at&quot;: &quot;2026-11-13T08:00:01Z&quot;, &quot;error&quot;: null},
+    {&quot;index&quot;: 1, &quot;status&quot;: &quot;rejected&quot;, &quot;delivery_id&quot;: null, &quot;object_id&quot;: null, &quot;received_at&quot;: null, &quot;error&quot;: {&quot;status_code&quot;: 422, &quot;code&quot;: &quot;invalid_contract&quot;, &quot;issues&quot;: []}}
+  ]
+}
+</code></pre>
+<p><code>accepted</code> and <code>stale</code> mean committed, including the transactional outbox entry; <code>duplicate</code> returns the original receipt time. <code>stale</code> means an older object version was added to history without replacing current state. Observation arrival order never implies an object mutation. A repeated event ID with different content or a conflicting version returns 409. Normalization makes JSON key order and equivalent time offsets irrelevant; other envelope changes are conflicts.</p>
+<p>A snapshot and an upsert at the same version share one receipt only when schema, payload, metadata, <code>occurred_at</code> and references agree. If the snapshot arrived first, its receipt is enriched with the event ID and sequence when the matching upsert arrives. This adds history provenance without a second state mutation. Source snapshots must preserve the version's occurrence time; using the export time as <code>occurred_at</code> would describe a different version body.</p>
+<p>Use identical identifiers and content after a timeout or lost response. The batch ID identifies a response; it is not a deduplication key. 409 needs source-side reconciliation; 410 means the identity was erased and retries must stop. Content requests have a 60-second deadline; a 504 can follow partial batch commits. A 503, 504 or transport failure has an unknown outcome and is safe to retry unchanged. Respect the rate-limit reset on 429 and use bounded backoff.</p>
+<p>The database serializes short mutations by tenant/user and also enforces unique identities, versions and sequences. The record/history change and invalidation outbox are committed together. There are no provider calls inside these transactions. The outbox carries identifiers and reasons (<code>state_changed</code>, <code>history_changed</code>, <code>erasure</code>), not copies of private text. <strong>No worker, index over general records, automatic analysis, job API or result cache is introduced in this step.</strong></p>
+<h3>Initial synchronization and reconciliation</h3>
+<p>At the source, capture a consistent snapshot plus its change-log cursor/boundary. Continue durable change delivery after that boundary, including changes occurring while snapshot parts are sent. Send each full-state snapshot with the source object's version. PAIagent keeps the highest version as current even if old snapshot data arrives later.</p>
+<p>An import request is:</p>
+<pre><code class="language-json">{
+  &quot;mode&quot;: &quot;snapshot&quot;,
+  &quot;snapshot_id&quot;: &quot;export-2026-11-13&quot;,
+  &quot;boundary&quot;: &quot;source-log-cursor-123&quot;,
+  &quot;part&quot;: 1,
+  &quot;final&quot;: true,
+  &quot;completeness&quot;: &quot;complete&quot;,
+  &quot;items&quot;: []
+}
+</code></pre>
+<p>A part contains 0–100 snapshot envelopes, at most 1 MiB. Unlike record/event batches, <strong>each import part is atomic</strong>; any item failure rolls back the part and its manifest. Empty parts allow an explicitly empty snapshot or final marker. Parts are numbered 1–10000 and can arrive out of order. <code>final:true</code> fixes the last part number, not proof that previous parts arrived. Snapshot ID, boundary, declared completeness and a part's content are immutable. Repeating a part returns its saved acknowledgements; reusing the part number with changed content returns 409. One snapshot cannot contain different versions of the same object. Different import runs may overlap; source versions still determine current state.</p>
+<p><code>GET /imports/{id}</code> returns received/missing parts, the opaque boundary and <code>snapshot_complete</code>, which is true only when the source declared completeness, the final part is known and every part is present. PAIagent cannot verify the source's claim or read its external log. The boundary is a handoff marker, not a receiver-generated cursor that independently guarantees no lost source changes.</p>
+<p>Reconciliation lists current objects with <code>snapshot_version</code>, <code>current_version</code> and <code>matched</code>, <code>newer_than_snapshot</code> or <code>absent_from_snapshot</code>. It never deletes anything. Even a complete import must not erase a newly created object merely because it was absent at the earlier boundary. Send an explicit versioned delete from the source or use the privacy-erasure API. To finish reconciliation while writes continue, use the source log and repeat enumeration after reaching a known boundary.</p>
+<p>Coverage reports <code>source_sequence_high_watermark</code>, missing inclusive ranges (up to 100 plus <code>gaps_truncated</code>), unsequenced events, snapshot receipts and erased deliveries. Missing ranges shrink when delayed events arrive. The maximum received sequence is <strong>not</strong> a safe resume cursor if gaps remain. A snapshot proves no past user actions; a contiguous received prefix does not prove the entire source history arrived. Consequently <code>history_complete</code> remains false, including after a complete snapshot. A new schema version also does not transform earlier payloads: explicitly normalize at the source and send a higher object version, retaining old history under its original schema.</p>
+<h3>Erasure, retention and reconnection</h3>
+<p>Erasure removes current payloads, history payloads, metadata, fingerprints, resolved references and affected import manifests. It removes pending invalidation entries containing erased evidence, then records content-free invalidation when appropriate. Linked observations, their entire correction chains, and records whose current <strong>or historical</strong> versions refer to the erased object are erased transitively. This may affect dependent records in other collections/sources owned by that same user. A privacy delete of a state-event therefore erases the whole object's private history; a late versioned delete cannot erase a newer current version.</p>
+<p>Collection/source deletion applies to <strong>the caller's user</strong>, never other users of the shared registry. It leaves schema/source/collection definitions intact and fences further writes into that scope. User deletion additionally removes all legacy documents, chunks/vectors, saved document knowledge, conversation sessions and messages. Legacy content has no source/collection association, so only full-user erasure includes it. Dependent profile results, active runs, evidence and managed memory participate in the erasure contract described in the execution and memory sections below.</p>
+<p>Minimal tombstones retain opaque external/event IDs, technical IDs, versions, ordering/time fields and erasure flags; they contain no deleted payload, metadata or content fingerprint. Use opaque identifiers, never private text as an ID. Replays into deleted identities return 410. Record/event reads hide erased items. Source queues cannot restore them, and a query already generating an answer cannot save its conversation after full-user erasure. Existing document indexing/knowledge saves recheck their parent document; it is removed atomically with dependent data.</p>
+<p>Erasure is synchronous and atomic, subject to the request deadline. Large-history erasure has not been load-tested; deletion remains a synchronous atomic operation in this release. A timeout never acknowledges an incomplete deletion.</p>
+<p>Content is retained until explicit erasure; this MVP has no automatic TTL or retention scheduler. Tombstones/fences persist indefinitely. Reconnection must be intentional: a new external object ID for an erased object, a new collection/source identity outside an erased scope, or a newly provisioned user identity after full-user erasure. Changing an event ID alone does not resurrect an erased object. There is no API to reset an erasure fence. The integrator must not automatically regenerate identities after 410.</p>
+<p>Future workers must acquire the same owner lock before committing, check owner/source/collection fences, ensure all referenced evidence is active and compare the versions they processed. A queued event is not permission to send all user data to a model. Deletion covers live application storage; source-side outboxes, database backups and external provider retention remain the deployment/integrator's responsibility.</p>
+<h3>Source-side outbox example</h3>
+<p><code>app/integration/delivery_example.py</code> is an independent source-client example using SQLite and HTTP. It commits the source object and exact outgoing envelope in one local transaction, then sends <strong>after</strong> commit. A crash after the server commit but before removing the local outbox entry results in a duplicate delivery, not a second effect. It uses one sender; production sources should use their own DB and an appropriate claim/lease mechanism.</p>
+<p>After registering a collection/schema, save an upsert envelope to a private JSON file and run:</p>
+<pre><code class="language-sh">.venv/bin/python -m app.integration.delivery_example \
+  --database /path/to/private/source.sqlite --enqueue /path/to/private/upsert.json
+# On retry, reuse the database and omit --enqueue:
+.venv/bin/python -m app.integration.delivery_example --database /path/to/private/source.sqlite
+</code></pre>
+<p>Set <code>PAIAGENT_URL</code>, <code>PAIAGENT_USER_ID</code>, and <code>PAIAGENT_API_KEY</code> as in the quickstart. Use a separate source DB/outbox for each destination tenant/user; the example stores no credentials. Transport/503/429 failures leave the exact envelope pending; successful accepted/duplicate/stale acknowledgements remove it. Other errors quarantine it for operator reconciliation. The example does not implement a background scheduler or alter another repository.</p>
+<h2>Verification</h2>
+<p>Run the project regression suite with an isolated PostgreSQL/pgvector cluster:</p>
+<pre><code class="language-sh">.venv/bin/python tests/run_postgres_tests.py --all
+</code></pre>
+<p>Tests cover schema/envelope boundaries, real authenticated HTTP and PostgreSQL, two tenants, two users of one tenant, narrow grants, forged source/collection IDs, concurrent version registration, migration rollback/upgrade with a pre-existing key, pagination, body/rate limits and the three-domain quickstart over a real local TCP server. Same-tenant schema visibility is intentional. Step-7 tests also exercise concurrent delivery, conflicts and stale versions, sequence gaps, imports during changes, corrections, object/reference erasure, source/user fences, source outbox retries over real TCP and deletion during an active query.</p>
+<p>Content lifecycle and migration checks use real PostgreSQL. Legacy SQLite fixtures alone do not verify erasure fencing. The suite makes no real OpenAI requests. Model quality is outside this step. The implementation was validated on a temporary database; applying the migration to the configured working database is a separate deployment action.</p>
+<h2>Normalized formats and shared evidence</h2>
+<p>Migration <code>b8e4f2a6c930</code> adds <code>evidence_fragments</code> and <code>file_provenance</code>. Apply it before running this release. Existing ingested payloads remain intact; explicitly normalize old current data with <code>POST /v1/collections/{id}/normalize?limit=50</code>, following <code>next_cursor</code>. New JSON/CSV deliveries create fragments in the ingestion transaction, using only registered <code>search_text</code> mappings. Numeric/date/category values remain exact JSON values in the original schema-versioned delivery; an evidence item identifies that delivery for typed-value retrieval through <code>/v1/events/{delivery_id}</code>. No numeric value is reconstructed from embedding text.</p>
+<p>New APIs use <code>data:read</code>/<code>data:write</code> and the existing owner/source grants:</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /v1/collections/{id}/files</code></td>
+<td>Multipart <code>file</code> and <code>envelope</code> (JSON IngestEnvelope string). Supports <code>.txt</code>, <code>.md</code>, text-layer <code>.pdf</code>, DRM-free <code>.epub</code>; envelope is snapshot/upsert with a schema-valid metadata payload.</td>
+</tr>
+<tr>
+<td><code>POST /v1/collections/{id}/csv</code></td>
+<td>Multipart <code>file</code>, <code>envelope</code> (snapshot template), <code>mapping</code> (JSON configuration below). Returns line numbers and conversion/schema/ingestion errors per row.</td>
+</tr>
+<tr>
+<td><code>POST /v1/collections/{id}/normalize</code></td>
+<td>Explicit paginated normalization of current pre-existing JSON data. No embedding calls.</td>
+</tr>
+<tr>
+<td><code>GET /v1/collections/{id}/context</code></td>
+<td>Paginated evidence units; <code>cursor</code>, <code>limit=1..100</code>. Includes positions, record/event versions and extraction limitations.</td>
+</tr>
+<tr>
+<td><code>GET /v1/evidence/{fragment_id}</code></td>
+<td>Retrieve a current evidence unit with fresh access checks; superseded/erased units return 404.</td>
+</tr>
+<tr>
+<td><code>POST /v1/collections/{id}/index</code></td>
+<td>Explicit embedding batch, at most 64 units. Repeat until <code>indexed=0</code>. Requires configured OpenAI access, may incur provider costs.</td>
+</tr>
+<tr>
+<td><code>POST /v1/collections/{id}/search</code></td>
+<td>JSON <code>{&quot;query&quot;:&quot;...&quot;,&quot;limit&quot;:5}</code>; vector/full-text RRF over current authorized collection evidence, limit 1..20.</td>
+</tr>
+</tbody>
+</table>
+<p>The multipart envelope is the same record envelope used by JSON ingestion; its payload holds registered metadata, not a fabricated text-field schema for each file. The server stores extracted text, positions, byte fingerprint, format and extraction coverage, without retaining the original binary. Identical envelope/file replay is idempotent. Changed file bytes at the same version conflict; supply a higher object version. A previously accepted JSON-only version cannot later acquire a file: use a higher version. The source keeps the original binary for external retrieval; raw uploaded bytes and arbitrary URLs are not exposed through evidence.</p>
+<p>Example with existing <code>source_id</code>, <code>collection_id</code>, metadata schema and <code>envelope.json</code>:</p>
+<pre><code class="language-sh">curl --fail-with-body &quot;$PAIAGENT_URL/v1/collections/$COLLECTION_ID/files&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $PAIAGENT_USER_ID&quot; \
+  -F 'file=@/path/to/document.pdf' -F 'envelope=&lt;/path/to/envelope.json'
+</code></pre>
+<p>CSV mapping example (root fields only, no type inference):</p>
+<pre><code class="language-json">{
+  &quot;columns&quot;: [
+    {&quot;column&quot;:&quot;title&quot;,&quot;field&quot;:&quot;caption&quot;,&quot;type&quot;:&quot;string&quot;,&quot;empty&quot;:&quot;reject&quot;},
+    {&quot;column&quot;:&quot;hours&quot;,&quot;field&quot;:&quot;estimate&quot;,&quot;type&quot;:&quot;number&quot;,&quot;empty&quot;:&quot;null&quot;,&quot;unit&quot;:&quot;hour&quot;},
+    {&quot;column&quot;:&quot;status&quot;,&quot;field&quot;:&quot;phase&quot;,&quot;type&quot;:&quot;string&quot;,&quot;empty&quot;:&quot;reject&quot;}
+  ],
+  &quot;id_column&quot;:&quot;id&quot;, &quot;version_column&quot;:&quot;version&quot;,
+  &quot;occurred_at&quot;:&quot;2026-11-13T08:00:00Z&quot;, &quot;encoding&quot;:&quot;utf-8-sig&quot;, &quot;delimiter&quot;:&quot;,&quot;
+}
+</code></pre>
+<p>Types: <code>string</code>, <code>integer</code>, finite <code>number</code>, lowercase <code>true|false</code> boolean, ISO <code>date</code>, offset-bearing <code>date-time</code>. Dates remain ISO strings for JSON Schema validation; there is no timezone/locale inference. Encodings: UTF-8 with optional BOM. Delimiters: comma, semicolon or tab. Empty behavior is <code>reject</code>, <code>null</code> or <code>omit</code>. A quantity mapping's CSV unit must exactly match the registered schema unit; units are not converted. Each row must contain an external ID and positive source version. Unmapped columns are ignored, duplicate/missing headers rejected. Valid rows persist independently; invalid rows have a visible line error. Retry the same unchanged CSV/envelope; changed successful rows require higher versions. Missing rows never imply deletion. CSV is a bounded ingestion batch, not a historical export.</p>
+<p>Limits: file 5 MiB, multipart request 6 MiB, extracted text 500,000 characters, 500 PDF pages/EPUB spine parts, 1,000 fragments/input, CSV 100 rows, EPUB 2,000 entries/20 MiB total uncompressed declared bytes. Over-limit files are rejected rather than silently truncated. Fragment length is at most 1,200 characters; indexing prepares batches using the existing embedding token limits. File parsing runs in a disposable process with an 8-second CPU limit and a 10-second wall deadline. Linux applies a 768 MiB address-space limit; macOS uses a parent RSS watchdog sampled every 50 ms (brief overshoot is possible). The worker receives only input/format, with a minimal environment and no service API credentials. It never executes document scripts, extracts archive files to disk, fetches URLs or performs OCR/DRM removal.</p>
+<p>PDF provenance uses actual 1-based page numbers; image-only PDFs are rejected, pages without extractable text cause partial coverage. PDF text-layer extraction does not reproduce layout or recognize image text. EPUB follows the OPF spine, with actual internal paths/section ordinals; encrypted EPUBs (including encryption manifests) are rejected. Active scripts/styles are omitted; images and non-spine material are outside extraction. TXT/Markdown retain extracted text, without executing markup. Character offsets refer to the extracted unit text, not binary file offsets. Full extraction coverage means all supported text units were visited; it is not proof that every visual element was interpreted.</p>
+<p>Context pages and search results carry explicit sampling limitations. UUID pages are not a snapshot under concurrent changes; <code>selection_complete</code> only indicates that the current page exhausted the remaining traversal. Collection/history completeness stays unknown. The pipeline supports all stored fragments in batches rather than treating the first 12 chunks as an entire book. Profile summarization consumes bounded evidence sections through the shared context layer; inspect coverage and limitations on its result.</p>
+<p>General evidence search is separate from legacy <code>/v1/search</code> and <code>/v1/query</code>, which keep their contracts and document pipeline. The common evidence endpoints are the shared context interface for profile capabilities. Search applies owner/collection restrictions before ranking, validates the source grant, combines pgvector cosine rank and PostgreSQL <code>simple</code> full-text rank, and returns source identifiers and exact versions. It does not use unselected JSON fields as embedding/search text. Unindexed evidence participates only in full-text ranking. New versions immediately hide old fragments from current context/search/evidence retrieval; erasure deletes fragments/vectors/file provenance with the original private content. An indexing result is discarded if its evidence changed or was erased while the provider ran. Stored historical source payloads retain their original schema versions.</p>
+<p>The step-8 test suite uses deterministic embeddings and generated PDF/EPUB fixtures. It does not call paid models or establish real embedding quality. The existing legacy TXT/Markdown regression suite remains part of acceptance. New formats can be added as bounded adapters returning extraction units with honest positions/coverage, while integrators can convert unsupported formats to normalized JSON or text themselves.</p>
+<h2>AI capabilities and declarative profiles</h2>
+<p>Migration <code>c9f5a3b7d041</code> follows <code>b8e4f2a6c930</code> and adds <code>analysis_profiles</code>, immutable <code>analysis_profile_versions</code>, and <code>analysis_results</code>. Existing data is preserved. Apply with <code>.venv/bin/alembic upgrade head</code> before serving this version. Downgrading removes profiles/results. Keys receive no implicit new permissions. Add <code>profiles:read</code>, <code>profiles:write</code>, <code>ai:run</code>, <code>results:read</code> explicitly; collection execution and result reads additionally require <code>data:read</code>. The service still needs <code>OPENAI_API_KEY</code> for generation/embedding operations; this is separate from its inbound service API key.</p>
+<p>Profiles belong to <strong>tenant + X-User-ID</strong>, including their goals and settings. A profile can never select another owner's data or extend the key's source grant. Registered schemas remain tenant-shared metadata. The static <code>/v1/integration-contract</code> includes JSON Schemas for ProfileInput, RunInput, profile pages and result envelopes; OpenAPI exposes these types too.</p>
+<table>
+<thead>
+<tr>
+<th>Method and route</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /v1/profiles</code></td>
+<td>Create version 1 from ProfileInput; 201.</td>
+</tr>
+<tr>
+<td><code>GET /v1/profiles?limit=50&amp;cursor=...</code></td>
+<td>Page of latest authorized versions, ordered by profile UUID.</td>
+</tr>
+<tr>
+<td><code>GET /v1/profiles/{id}</code></td>
+<td>Latest profile metadata; does not run it.</td>
+</tr>
+<tr>
+<td><code>GET /v1/profiles/{id}/versions/{version}</code></td>
+<td>Specific immutable version.</td>
+</tr>
+<tr>
+<td><code>POST /v1/profiles/{id}/versions/{version}</code></td>
+<td>New full ProfileInput, version must be previous maximum + 1; concurrent duplicates conflict.</td>
+</tr>
+<tr>
+<td><code>DELETE /v1/profiles/{id}</code></td>
+<td>200; delete all versions and saved results.</td>
+</tr>
+<tr>
+<td><code>POST /v1/profiles/{id}/runs</code></td>
+<td>RunInput with <strong>explicit version</strong>; 200 CapabilityResult. Finite synchronous execution.</td>
+</tr>
+<tr>
+<td><code>GET /v1/profiles/{id}/results?limit=50&amp;cursor=...</code></td>
+<td>Page of small result summaries (IDs, version, state, generated_at, freshness); fetch payload by ID.</td>
+</tr>
+<tr>
+<td><code>GET /v1/results/{id}</code></td>
+<td>Saved envelope with freshly checked current/stale status. Never generates. Inline IDs are not persisted and return 404.</td>
+</tr>
+</tbody>
+</table>
+<p>Page size is 1..100; cursors are exclusive UUIDs, not chronological offsets or snapshots. Authorization can leave a short/empty page with a next cursor. A successful HTTP request commits its writes. The synchronous profile route remains compatible; the durable run API below adds jobs, triggers and idempotent run replay. A timeout or transport failure should be handled by the client; an ambiguous HTTP response can occur after commit, so inspect saved result summaries before retrying an expensive request.</p>
+<h3>Profile and run example</h3>
+<p>The following uses the existing task example schema; replace <code>$COLLECTION_ID</code> with your own registered collection ID. The same declarations work with other scalar field names and registered quantity/category roles. No entity-specific controller or graph node is needed. Six complete profile examples are bundled in <code>documentation/examples/profiles/</code>; their placeholder collection UUID must be replaced.</p>
+<pre><code class="language-sh">curl -sS &quot;$BASE_URL/v1/profiles&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $USER_ID&quot; \
+  -H 'Content-Type: application/json' -d &quot;{
+    \&quot;name\&quot;:\&quot;workload\&quot;,\&quot;capability\&quot;:\&quot;analyze\&quot;,
+    \&quot;goal\&quot;:\&quot;Describe the supplied workload and its limitations\&quot;,
+    \&quot;language\&quot;:\&quot;uk\&quot;,\&quot;timezone\&quot;:\&quot;Europe/Warsaw\&quot;,
+    \&quot;selections\&quot;:[{\&quot;collection_id\&quot;:\&quot;$COLLECTION_ID\&quot;,\&quot;schema_version\&quot;:1,
+      \&quot;fields\&quot;:[\&quot;/caption\&quot;,\&quot;/phase\&quot;,\&quot;/estimate\&quot;],\&quot;kind\&quot;:\&quot;record\&quot;,\&quot;mode\&quot;:\&quot;current\&quot;}],
+    \&quot;metrics\&quot;:[{\&quot;name\&quot;:\&quot;records\&quot;,\&quot;selection\&quot;:0,\&quot;operation\&quot;:\&quot;count\&quot;},
+      {\&quot;name\&quot;:\&quot;estimate_by_phase\&quot;,\&quot;selection\&quot;:0,\&quot;operation\&quot;:\&quot;average\&quot;,
+       \&quot;field\&quot;:\&quot;/estimate\&quot;,\&quot;group_by\&quot;:\&quot;/phase\&quot;}],
+    \&quot;minimum_samples\&quot;:1}&quot;
+
+# Use profile_id from the response. Run version 1, not an implicit latest.
+curl -sS &quot;$BASE_URL/v1/profiles/$PROFILE_ID/runs&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $USER_ID&quot; \
+  -H 'Content-Type: application/json' -d '{&quot;version&quot;:1}'
+</code></pre>
+<p>ProfileInput supports <code>name</code>, <code>capability</code>, <code>goal</code>, <code>selections</code>, <code>period</code>, <code>comparison_period</code>, <code>timezone</code>, <code>constraints</code>, <code>language</code>, <code>output_schema</code>, <code>metrics</code>, <code>minimum_samples</code>, <code>budget</code>. Unknown keys, tools, SQL, formulas and executable graphs are rejected. Goals/constraints/schema annotations are data under system rules; user text is never allowed to change access or limits.</p>
+<p>Selections pin <code>collection_id</code>, <code>kind=record|event</code>, <code>schema_version</code>, and 1..30 scalar JSON Pointer <code>fields</code> through objects (arrays/whole objects are not selected). <code>mode=current</code> chooses the current record version; <code>history</code> chooses non-erased snapshots/upserts, or independent observations when <code>kind=event</code>. Events require <code>mode=history</code>; corrected observations are excluded. Snapshots describe state and must not be counted as user actions. Schema versions are never coerced or combined implicitly. Future payload versions require a new profile version or explicit compatible input. <code>include_text=true</code> explicitly adds attached file contents; otherwise only selected scalar values are visible. It does not expose unselected JSON search-text fields. Registering a schema alone does not ingest or normalize its data.</p>
+<p><code>filters</code> is an AND of <code>{field,op,value}</code> declarations. Every filter/time/metric path must also be in <code>fields</code>. <code>eq</code>, <code>ne</code>, <code>in</code> take typed non-null values satisfying the pinned schema; <code>in</code> has 1..100 entries. <code>gt/gte/lt/lte</code> support numeric fields only. <code>is_null</code> matches both missing and JSON null; <code>not_null</code> excludes both; these operators take no value. All other operators exclude null/missing. There is no implicit text/number/date conversion.</p>
+<p><code>period</code> and optional non-overlapping <code>comparison_period</code> are <code>{start,end}</code> with explicit offsets, interpreted as <strong>[start, end)</strong>. Comparison requires metrics and a primary period. A selection's <code>time_field</code> defaults to delivery metadata <code>occurred_at</code>; alternatively select a schema field with <code>format=date-time</code>. Missing/null time is excluded by a period. Without a period it remains available and uses <code>missing_time</code> for interval grouping. The IANA <code>timezone</code> changes day/week/month calendar buckets, including daylight-saving transitions; it never assigns an offset to naive timestamps. Week starts Monday; bucket values are local start dates.</p>
+<h3>Inputs and typed payloads</h3>
+<p>Every run returns the shared CapabilityResult envelope. <code>execution_status=succeeded</code> describes execution, separately from <code>data_state=sufficient|partial|insufficient_data</code>. It includes <code>run_id</code>, <code>result_id</code>, capability, immutable profile version, typed payload, authorized <code>sources</code> with delivery/object/schema versions and evidence positions, periods/timezone, coverage, limitations, generated/data-as-of timestamps, freshness and budget reservations. <code>sufficient</code> means enough selected evidence for this operation, not complete external history or verified truth.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>RunInput and payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>search</code></td>
+<td>Non-blank <code>query</code>, <code>limit=1..20</code> (default 5). Payload <code>{items: Source[]}</code>; no generation. Ranks only the bounded authorized selection: lexical matching on projected scalar fields; explicitly included indexed file fragments also use cosine similarity, fused with RRF k=60. No automatic indexing. Always partial or insufficient.</td>
+</tr>
+<tr>
+<td><code>query</code></td>
+<td>Non-blank <code>query</code>; optional explicit `history=[{role:user</td>
+</tr>
+<tr>
+<td><code>summarize</code></td>
+<td>Payload <code>{claims:[{text,source_ids}],limitations}</code>. Processes all selected source batches, summarizes each and recursively reduces them within the budget. All processed source IDs/positions remain in the envelope; final claim references must trace to supplied evidence. Multiple selected documents retain distinct source identities.</td>
+</tr>
+<tr>
+<td><code>extract</code></td>
+<td>Requires <code>output_schema</code> using the bounded registered-schema subset; objects require all properties in <code>required</code> and <code>additionalProperties:false</code>. Use nullable fields for unknown values; enum fields implement classification. Payload <code>{data,source_ids,claims,limitations}</code>; <code>data=null</code> on insufficient evidence. No arbitrary code or schema references.</td>
+</tr>
+<tr>
+<td><code>analyze</code></td>
+<td>Payload <code>{metrics,claims,limitations}</code>; metrics come exclusively from server operations below. Claims provide qualitative comparisons/observations.</td>
+</tr>
+<tr>
+<td><code>recommend</code></td>
+<td>Payload <code>{claims,limitations}</code>; claims describe evidence-grounded advisory proposals for the declared goal. No command execution. Managed memory/personalization is optional under the step-11 contract below.</td>
+</tr>
+</tbody>
+</table>
+<p>For long extract/analyze/recommend inputs, qualitative generation uses the first bounded text batch and reports partial; exact analyze metrics still use all matching selected rows or fail explicitly. Search/query operate on a bounded candidate sample, not a full-corpus search guarantee. Summarize covers its selected batches, not necessarily every original/source-side object. Coverage distinguishes matched/selected rows and fragments, processed text, pinned schema, and unknown collection/history completeness. Large inputs beyond the selection/source or generation budget must be narrowed or explicitly given a larger supported budget.</p>
+<p>For an ephemeral run, create a profile with <code>selections:[]</code>, then submit <code>{&quot;version&quot;:1,&quot;inline&quot;:[{&quot;label&quot;:&quot;note&quot;,&quot;text&quot;:&quot;...&quot;}]}</code>. Up to 10 explicit text inputs and 500000 total characters are accepted. Do not mix inline inputs with collection selections. Inline periods and exact metrics are unsupported; use schema-validated collection data for them. Input text/history and resulting output are not written to the application DB, added to managed memory, or logged by this workflow; they remain in request memory until it finishes. The profile itself is persisted, so do not put ephemeral source text into its goal/constraints. Provider requests set <code>store=false</code>; provider operational retention follows its own account/policy terms.</p>
+<h3>Exact numeric operations</h3>
+<p>Only <code>analyze</code> accepts <code>metrics</code>, at most 20. A metric names one selection index and <code>operation=count|sum|average|min|max</code>. <code>count</code> counts received selected rows and prohibits <code>field</code>; numeric operations require a selected, schema-registered <code>quantity</code> with an explicit unit. <code>group_by</code> requires a selected registered <code>category</code>. Optional <code>interval=day|week|month</code> uses the selection time field. At most 100 group/bucket combinations per metric/period. No formula inference or unit conversion is performed.</p>
+<p>Missing/null quantity values are skipped. Empty or all-null numeric aggregates are <code>null</code>; an ungrouped empty count is <code>&quot;0&quot;</code>. Group keys preserve scalar types; missing/null categories share a null group. Metrics return <code>sample_count</code>, <code>value_count</code>, <code>null_count</code>, and the non-null <code>denominator</code> for average, with supporting delivery IDs. Numeric values are decimal strings to avoid client JSON float loss. Arithmetic uses decimal precision 650 and ROUND_HALF_EVEN, enough for supported finite input magnitudes 1e-324..1e308 and bounded sums; repeating averages are rounded. Larger numeric magnitudes fail explicitly. <code>count</code> unit is <code>1</code>; other units are copied from the registered quantity.</p>
+<p>Two periods return primary/comparison aggregates plus primary-minus-comparison differences. Groups and calendar buckets align by their exact values; absent groups/buckets produce <code>null</code>, not assumed zero. Calendar buckets use absolute local dates rather than relative day numbers across periods. Per-period bucket series can therefore be compared by the client using its own declared alignment. Exact input exceeding <code>max_records</code> returns <code>422 exact_input_limit</code>; no sampled metric is labeled complete. Model-generated prose cannot overwrite the numeric metric payload.</p>
+<h3>Budgets, failure and lifecycle</h3>
+<p>Defaults / hard maxima: records 1000/5000, file/inline fragments 1000/1000, source characters per call 24000/30000, model calls 16/32, input token reservation 64000/256000, total output reservation 16000/32000, per-call output 2000/4000, provider-phase seconds 50/50. Source JSON is limited to 4 MiB; result envelope to 8 MiB. Limits also have positive lower bounds in the schema. Input reservation conservatively charges UTF-8 bytes plus framing including system/schema; output reserves the complete per-call maximum, not just observed text. These are safe local reservations, not provider billing reports. Step-10 tenant admission may further clamp these per-profile bounds (including provider-phase seconds to 40); the effective budget appears in RunView. Capability generation/embedding SDK clients disable retries; retrieval embedding counts as a model call. Existing legacy clients keep their existing retry policy.</p>
+<p>If any selected dataset/period fails to meet <code>minimum_samples</code> (default 1), no generation occurs and the data state is insufficient; exact metrics can still be returned. Inline minimum counts inputs, not fragments. <code>422 generation_budget</code> signals exhausted call/token budget; <code>422 metric_group_limit</code> means too many groups; <code>422 size_limit</code> means source/result JSON too large; <code>504 capability_timeout</code> is the deadline; <code>502 invalid_generation</code> covers refusal, incomplete/invalid output, provider errors or unverified/duplicate evidence IDs. Existing successful results remain saved. A successful insufficient-data result is a separate record; no prior result is overwritten.</p>
+<p>The provider adapter uses strict Responses JSON Schema and validates output again locally, including every claim's source IDs. A source ID check proves membership/authorization, not that the statement is supported. Semantic accuracy, recommendation usefulness, causality and prompt-injection resistance still require real-model evaluation; no numeric confidence is invented. <a href="https://developers.openai.com/api/docs/guides/structured-outputs">Official structured-output contract</a>.</p>
+<p>Collected runs capture the collection mutation signature under the same owner lock used by ingestion/erasure. Provider calls occur outside the transaction. The signature, profile and erasure fences are rechecked under that lock before saving; concurrent input changes return <code>409 input_changed</code>. Results are append-only successes; GET refreshes <code>freshness=current|stale</code> without model calls. Changes anywhere in a selected collection conservatively mark a result stale, even outside its filters. Profile version stays fixed during execution; creating a later version does not mutate older versions/results.</p>
+<p>Erasing any dependent object/observation physically removes results for its affected collections, including results based on absence/counts and corrected observation chains. Scope erasure also deletes profiles referencing that scope; user erasure removes all private profiles/results, including inline-only profile settings. In-flight work cannot save behind an erasure fence or recreate an erased result. Profile deletion cascades its versions/results. Collected successes persist until explicit deletion; no automatic expiry is configured in this step. Backups/source queues/provider operational storage remain outside live application erasure.</p>
+<h2>Durable execution, triggers and polling</h2>
+<p>Migration <code>d0a6b4c8e152</code> follows step 9 and adds <code>analysis_runs</code>, <code>analysis_triggers</code>, <code>analysis_tenant_usage</code> and a unique optional <code>analysis_results.run_id</code> association. It preserves existing profiles/results. Downgrade removes jobs, trigger configuration and quota history; it drops the run association while preserving result contents. Apply migrations before starting either process:</p>
+<pre><code class="language-sh">.venv/bin/alembic upgrade head
+# Web process, as before:
+.venv/bin/uvicorn app.asgi:create_app --factory --host 127.0.0.1 --port 8000
+# Separate process, using the same configured PostgreSQL and model settings:
+.venv/bin/python -m app.jobs.worker --concurrency 4 --poll-seconds 1
+</code></pre>
+<p>The worker fails startup if the job schema is unavailable. Keep it running under your process supervisor. <code>--concurrency</code> accepts 1..16 and <code>--poll-seconds</code> 0.1..30. <code>--once</code> drains work currently due, then exits; it leaves delayed retries and future scheduled work in PostgreSQL. No Redis, external broker, checkpointer or web-process task is required for durability. Multiple worker processes coordinate through the database; task objects in a worker only execute jobs already committed there.</p>
+<p>New key grants: <strong><code>runs:write</code></strong> for durable submission/cancellation and <strong><code>runs:read</code></strong> for polling/listing. Submission also requires <code>ai:run</code> and <code>data:read</code>; trigger configuration requires these plus <code>profiles:write</code>. Result GET uses <code>results:read</code> + <code>data:read</code>; source grants always apply. Existing keys gain no permissions automatically. The compatible <code>POST /profiles/{id}/runs</code> continues to require <code>ai:run</code> (+ <code>data:read</code> for collections) and now shares tenant admission with background work.</p>
+<h3>Submit and consume a result</h3>
+<pre><code class="language-sh">curl -sS &quot;$BASE_URL/v1/runs&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $USER_ID&quot; \
+  -H 'Content-Type: application/json' -d &quot;{
+    \&quot;profile_id\&quot;:\&quot;$PROFILE_ID\&quot;,
+    \&quot;input\&quot;:{\&quot;version\&quot;:1},
+    \&quot;idempotency_key\&quot;:\&quot;analysis-request-001\&quot;,\&quot;mode\&quot;:\&quot;async\&quot;}&quot;
+
+# Read id from the accepted RunView:
+curl -sS &quot;$BASE_URL/v1/runs/$RUN_ID&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $USER_ID&quot;
+# When status=succeeded and result_id is non-null:
+curl -sS &quot;$BASE_URL/v1/results/$RESULT_ID&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $USER_ID&quot;
+</code></pre>
+<p>For <code>search</code>/<code>query</code>, also pass <code>input.query</code>; optional explicit bounded query history is supported. The profile version is required and pinned at submission even if another version is registered before execution. <code>idempotency_key</code> is a printable non-blank string, at most 100 characters, scoped to tenant+user. The same key/profile/RunInput returns the same job and eventual result; different input conflicts with <code>409 run_idempotency_conflict</code>. <code>mode</code> is a transport preference and is not part of that computation identity. Erasure clears fingerprints and leaves terminal identities unusable for replay.</p>
+<p><code>mode=async</code> returns <strong>202 RunView</strong> after commit, without a provider call in the request. <code>mode=sync</code> may execute the admitted job immediately: it returns <strong>200</strong> for terminal state or <strong>202</strong> if work is queued, retrying, or lacks an available slot. Another worker may already own it, in which case poll its ID. The same run/status/result contract is used in either case. A succeeded run with <code>data_state=insufficient_data</code> is an execution success; inspect the separate result data state. GET routes never run AI.</p>
+<p>The bundled independent client submits, polls and reads a structured result without importing service internals:</p>
+<pre><code class="language-sh"># Provide the inbound service key via this environment variable, not a CLI argument.
+export PAIAGENT_SERVICE_KEY=&quot;$PAIAGENT_API_KEY&quot;
+.venv/bin/python -m app.integration.run_client \
+  --base-url &quot;$BASE_URL&quot; --user-id &quot;$USER_ID&quot; \
+  --profile-id &quot;$PROFILE_ID&quot; --version 1 --idempotency-key analysis-request-002
+</code></pre>
+<p>The client has a 120-second polling deadline; a timeout does not cancel the durable job. Poll again or explicitly cancel. For query/search add <code>--query '...'</code>. This client was exercised in a separate process through a real localhost HTTP socket and a worker with a fake provider; that verifies integration boundaries, not real AI quality.</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Input / result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /v1/runs</code></td>
+<td>`{profile_id,input:RunInput,idempotency_key,mode:async</td>
+</tr>
+<tr>
+<td><code>GET /v1/runs/{run_id}</code></td>
+<td>RunView with status, attempts/max_attempts, effective budget, lease expiry, availability/start/finish timestamps, input boundary/data-as-of, result ID and safe error code. Input text/history and lease token are never exposed.</td>
+</tr>
+<tr>
+<td><code>GET /v1/runs</code></td>
+<td><code>cursor</code>, <code>limit=1..100</code>, optional <code>status</code> and <code>profile_id</code>; private authorized RunPage.</td>
+</tr>
+<tr>
+<td><code>POST /v1/runs/{run_id}/cancel</code></td>
+<td>200 RunView. Pending/running becomes cancelled; terminal states remain unchanged.</td>
+</tr>
+<tr>
+<td><code>PUT /v1/profiles/{id}/triggers</code></td>
+<td>Full TriggerInput configuration with pinned version; cancels prior active trigger jobs and rotates its revision.</td>
+</tr>
+<tr>
+<td><code>GET /v1/profiles/{id}/triggers</code></td>
+<td>TriggerView; <code>enabled</code> is effective state, <code>config.enabled</code> is the submitted preference. <code>error_code</code> explains automatic disable.</td>
+</tr>
+<tr>
+<td><code>GET /v1/profiles/{id}/results</code></td>
+<td>Existing summary page additionally filters <code>version</code> and <code>data_state</code>; full payload remains a separate result GET.</td>
+</tr>
+</tbody>
+</table>
+<p>Run pages use exclusive UUID cursors, not chronological offsets or snapshot pagination. Lists can have short/empty pages with a next cursor after source filtering. Cross-owner/cross-tenant IDs are unavailable. Cancellation does not disable future trigger events or erase prior successful results; disable the trigger or use privacy erasure for those separate operations. Cancel-vs-save serializes under the owner lock: if save wins, cancellation returns succeeded; if cancellation wins, the attempt cannot persist output.</p>
+<h3>Configure change and interval triggers</h3>
+<pre><code class="language-sh">curl -sS -X PUT &quot;$BASE_URL/v1/profiles/$PROFILE_ID/triggers&quot; \
+  -H &quot;Authorization: Bearer $PAIAGENT_API_KEY&quot; -H &quot;X-User-ID: $USER_ID&quot; \
+  -H 'Content-Type: application/json' -d '{
+    &quot;version&quot;:1,&quot;enabled&quot;:true,&quot;on_change&quot;:true,
+    &quot;debounce_seconds&quot;:10,&quot;max_wait_seconds&quot;:120,&quot;interval_seconds&quot;:3600}'
+</code></pre>
+<p>There is one current trigger configuration per profile, pinned to an explicit version. Manual runs are always available with the corresponding grants. An enabled automatic configuration requires <code>on_change</code>, an interval, or both. Search/query profiles also need a non-blank trigger <code>query</code>; <code>limit</code> defaults to 5. Trigger-driven runs use the profile's collection selection and budgets; inline-only profiles cannot be scheduled. PUT with <code>{&quot;version&quot;:1,&quot;enabled&quot;:false}</code> disables automatic execution and cancels its active jobs. Reconfiguration cancels old trigger jobs, not independent manual runs.</p>
+<p>On-change activation establishes a baseline of currently received data; it reacts to subsequent mutations. Submit a manual run if you also want immediate analysis of existing content. Ingestion already commits an outbox receipt in the same owner transaction as the data change. The scheduler reads the full mutation fingerprint and commits <strong>job creation/coalescing + trigger cursor advancement atomically</strong>. It does not rely on a callback from the web process. Queue pressure leaves the dirty cursor unadvanced, so the intent is retried later.</p>
+<p>Multiple changes coalesce into at most one pending job per trigger, enforced by a PostgreSQL partial unique index. Debounce is 1..300 seconds (default 10); maximum wait is 1..600 seconds (default 120), at least debounce. Repeated changes defer a pending job only up to that first enqueue's maximum wait. A running attempt can have one pending successor. If data changed during that attempt, its stale save is rejected; retry yields to the pending successor when present. Saving a result does not create a source outbox receipt, preventing self-trigger loops.</p>
+<p><code>interval_seconds</code> is 60..2592000 (30 days). Optional <code>start_at</code> is an aware timestamp; otherwise the first tick is now+interval. This is an elapsed-time schedule aligned to that anchor, not a cron expression or a local wall-clock schedule. Missed ticks during downtime coalesce into one job; the next due time advances past now without drifting the anchor. If both time and change triggers are due, they share the same pending recalculation. Profile periods remain the explicit periods declared in that immutable version; scheduling does not invent a moving time window. Update the profile/trigger version if the selection must change.</p>
+<p>A revoked key or removed required grant disables a trigger with <code>execution_forbidden</code>; explicitly reconfigure it using a valid authorized key after rotation. Effective enable state is returned separately from submitted config. Candidate polling rotates by last-check time in bounded batches; the default worker checks up to 50 configurations per scheduling pass.</p>
+<h3>Recovery, budgets and fairness</h3>
+<p>Jobs transition <code>pending → running → succeeded|failed|cancelled</code>; retry and expired-lease recovery can return them to pending. Every claim gets a fresh random token and a <strong>90-second lease</strong>. Provider work executes outside database transactions. The whole attempt has an effective-profile deadline plus 10 seconds, at most 50 seconds under the default tenant policy; its provider phase is at most 40 seconds. A worker process killed without cleanup leaves the job recoverable after lease expiry. Recovery applies backoff and the attempt limit; no graph checkpoint is required.</p>
+<p>Profile Budget now also accepts <code>max_attempts=1..3</code> (default 3, including the first attempt), <code>retry_seconds=1..60</code> (default 5), and <code>tool_calls=0</code>. No tools or commands can be enabled by configuration. Retries use exponential delay from retry_seconds, capped at 300 seconds. Provider/timeout/transient-storage/input-changed failures are retryable; invalid declarations, forbidden access and internal errors terminate. A crash consumes an attempt/reservation. Inline synchronous runs have one attempt and cannot be replayed by a worker because their input was never stored. Cancelled jobs cannot be resumed through retry.</p>
+<p>At attempt start the worker records a data boundary and server data-as-of under the owner lock. Before save it checks source/fences, live key grants, lease/token, trigger revision and the mutation signature again. <code>409 input_changed</code> rejects output generated against a changing collection and requests a bounded retry. New on-change data can retain a successor independently of that active attempt, so an older success cannot clear a newer intent. A unique result association and one transaction for result insertion plus succeeded job prevent duplicate visible results when execution is repeated. Model requests themselves may be repeated after a crash; leases cannot revoke work already accepted by an upstream provider.</p>
+<p>Tenant limits are server policy (<code>app/jobs/runtime.py</code>) and cannot be raised by a profile:</p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Default server bound</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Active jobs (pending + running)</td>
+<td>100 per tenant, shared across users/keys</td>
+</tr>
+<tr>
+<td>Running attempts</td>
+<td>2 per tenant, across worker/API processes</td>
+</tr>
+<tr>
+<td>Trigger configurations</td>
+<td>100 per tenant</td>
+</tr>
+<tr>
+<td>UTC-day attempts / model-call reservations</td>
+<td>200 / 3200 per tenant</td>
+</tr>
+<tr>
+<td>UTC-day input / output token reservations</td>
+<td>10000000 / 2000000 per tenant</td>
+</tr>
+<tr>
+<td>Per-attempt rows / fragments</td>
+<td>5000 / 1000, further limited by profile</td>
+</tr>
+<tr>
+<td>Per-attempt calls / input / output reservations</td>
+<td>16 / 128000 / 16000, further limited by profile</td>
+</tr>
+<tr>
+<td>Provider phase / whole attempt / lease</td>
+<td>40s / at most 50s / 90s</td>
+</tr>
+</tbody>
+</table>
+<p>A short PostgreSQL admission lock serializes queue/quota accounting across processes. It is never held during generation. Claims use <code>FOR UPDATE SKIP LOCKED</code>, exclude saturated tenants and rotate eligible tenants by last-claim time. One tenant therefore cannot occupy every slot in the default four-slot worker. <a href="https://www.postgresql.org/docs/current/sql-select.html">PostgreSQL queue-locking semantics</a>. Actual throughput and multi-tenant latency still require load measurement at the intended deployment volume.</p>
+<p>A profile budget is clamped to server maxima and persisted at admission; RunView exposes it. Reservations charge each entire admitted attempt's model/input/output allowance, even on failure or crash, rather than assuming unused provider budget can be refunded. Generation already uses conservative byte-based input reservations and complete per-call output reservations. Search calls can therefore reserve more than they consume. Tenant-day exhaustion postpones a queued job until the next UTC midnight (<code>daily_budget</code>); it does not call the provider. Active queue/concurrency overflow on immediate synchronous admission returns 429 with a safe code and retry header. Cancellation does not refund spent reservations. Different tenants have independent budgets and reserved concurrency.</p>
+<h3>Authorization, retention and erasure</h3>
+<p>Each accepted job stores the authenticating key ID and its original scope/source upper bounds, never the raw secret. The worker intersects those bounds with the key's current live grants at claim, start and save; later grant expansion cannot broaden an accepted job. Profile version, owner, source restrictions and erasure fences remain authoritative. Scheduled work has the same checks. Worker database credentials are operator credentials and must remain private.</p>
+<p>Durable jobs store their bounded collection query/history until explicit erasure/profile deletion; there is no automatic job-content expiry in this MVP. Status/list endpoints never return that input. Explicit inline input remains supported only through the synchronous profile endpoint: its text, history, result and content fingerprint are not persisted. Content-free run metadata, grants, budget and timestamps are retained so it can participate in admission/accounting. The inline result ID still returns 404 on saved-result GET.</p>
+<p>Object/observation erasure cancels affected collection jobs, clears their query/history/fingerprint, invalidates the lease and removes dependent results; this also covers results derived from absence, counts and corrected observations. Collection/source erasure cascades affected profiles, trigger configurations and jobs; user erasure removes all its private profiles/jobs, including inline run metadata. Tenant usage keeps only content-free reservation totals. An in-flight worker cannot save behind these changes. Historical request settings in a profile are separate private configuration; remove the profile when those settings themselves need erasure. Operational backups/provider retention remain outside live application cleanup.</p>
+<h2>Managed memory, personalization and feedback</h2>
+<p>Migration <code>e1b7c5d9f263</code> follows <code>d0a6b4c8e152</code>. It adds <code>memory_settings</code>, <code>memory_messages</code>, <code>memory_items</code>, <code>memory_blocks</code>, <code>result_feedback</code> and <code>personalization_uses</code>; existing source data, profiles, jobs and results are preserved. Downgrade removes managed memory/feedback and its dependency metadata. Apply migrations before restarting web and worker processes. No additional dependency is required.</p>
+<p>The following are separate objects with separate meanings:</p>
+<table>
+<thead>
+<tr>
+<th>Object</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Collection records/events/documents</td>
+<td>Source history/evidence, governed by the existing schema and ingestion lifecycle. A document is not a personal fact.</td>
+</tr>
+<tr>
+<td>Query history / explicit user-message receipts</td>
+<td>Conversation context or an explicitly submitted user statement. Query history and assistant answers are never automatically extracted into memory.</td>
+</tr>
+<tr>
+<td>Preference</td>
+<td>A versioned user assertion or a candidate confirmed by the caller. It guides presentation/advisory choices; it is not source evidence.</td>
+</tr>
+<tr>
+<td>Observation</td>
+<td>A confirmed projection from a declared event field, with explicit period, sample count 1, unit when mapped and source provenance. It is not an immutable personal trait or established causality.</td>
+</tr>
+<tr>
+<td>Result feedback</td>
+<td>An explicit assessment/decision about a result/proposal. Acceptance does not prove execution or benefit. Comments and AI outputs do not become preferences.</td>
+</tr>
+</tbody>
+</table>
+<p>Memory is off by default and needs <strong>two explicit opt-ins</strong>: owner memory settings and an immutable analysis profile. All memory belongs to tenant+X-User-ID and a registered collection, making source grants enforceable even for explicit preferences/messages. Data from matching user IDs in different tenants is never merged. New exact scopes are <code>memory:read</code>, <code>memory:write</code>, <code>feedback:read</code>, <code>feedback:write</code>; existing keys receive none automatically. Owner-wide settings/forget operations require an unrestricted source grant. Other operations enforce the addressed collection's source grant.</p>
+<h3>Enable only declared collections, keys and fields</h3>
+<p>Read <code>GET /v1/memory/settings</code> first; its initial version is 0. Feedback or memory mutations can advance the owner-wide version, so always use the returned version when changing settings. An unrestricted administration key with <code>memory:write</code> can then submit:</p>
+<pre><code class="language-json">{
+  &quot;expected_version&quot;: 0,
+  &quot;enabled&quot;: true,
+  &quot;collections&quot;: [&quot;MEMORY_COLLECTION_UUID&quot;],
+  &quot;definitions&quot;: [{
+    &quot;key&quot;: &quot;response_format&quot;,
+    &quot;value_schema&quot;: {&quot;type&quot;:&quot;string&quot;,&quot;maxLength&quot;:20,&quot;enum&quot;:[&quot;brief&quot;,&quot;detailed&quot;]},
+    &quot;message_prefixes&quot;: [&quot;Response format: &quot;]
+  }],
+  &quot;field_rules&quot;: []
+}
+</code></pre>
+<p>Send this to <code>PUT /v1/memory/settings</code>, using the standard Authorization and X-User-ID headers. Collection IDs must exist in the caller's tenant/source grants and not be erased. A dedicated preferences collection can be empty: explicit preferences/messages do not need a source record. Definitions use the existing bounded scalar schema subset (no objects, arrays, references or executable validators); string values are at most 500 characters. Null/missing values are not preferences; use DELETE to forget. Keys use the documented ASCII identifier pattern. There are at most 10 collections, 30 keys and 30 field rules.</p>
+<p>For an actual schema-validated <strong>user-authored record</strong> such as <code>{&quot;preferred_format&quot;:&quot;brief&quot;}</code>, an explicit field rule can be configured:</p>
+<pre><code class="language-json">{&quot;collection_id&quot;:&quot;MEMORY_COLLECTION_UUID&quot;,&quot;schema_version&quot;:1,
+ &quot;field&quot;:&quot;/preferred_format&quot;,&quot;key&quot;:&quot;response_format&quot;,&quot;kind&quot;:&quot;preference&quot;,&quot;source_kind&quot;:&quot;record&quot;}
+</code></pre>
+<p>The field must be declared and scalar in that registered schema. The trusted backend is responsible for declaring that it represents the user's own statement; the service never guesses authorship from text. Do not configure book text or third-party statements as user-preference fields. Attached files, including their metadata deliveries, are rejected by memory extraction. To record user notes about a document, submit a separate user-authored record/message.</p>
+<p>Event fields require <code>kind=observation, source_kind=event</code>. Extraction then needs an aware <code>[start,end)</code> period covering the event. The response retains that period, source/schema/object versions, field, unit if declared, <code>sample_count=1</code> and applicability limits. It does not infer a pattern or personality trait from one event. Observations are excluded from personalization unless the profile separately enables them; with a requested analysis/comparison period, their period must overlap one of those windows.</p>
+<h3>Explicit preferences and confirmable candidates</h3>
+<p><code>PUT /v1/memory/preferences</code> accepts:</p>
+<pre><code class="language-json">{&quot;collection_id&quot;:&quot;MEMORY_COLLECTION_UUID&quot;,&quot;key&quot;:&quot;response_format&quot;,
+ &quot;value&quot;:&quot;brief&quot;,&quot;expected_version&quot;:0,&quot;restore&quot;:false}
+</code></pre>
+<p><code>expected_version=0</code> means no current confirmed preference for that collection/key. For a correction, fetch the current confirmed preference and use its actual version. Stale writes return <code>409 memory_version_conflict</code>. One confirmed preference per owner/collection/key is enforced in PostgreSQL. Explicit corrections take priority over inferred candidates and increment the memory version; old personalized results become stale rather than silently changing their historical payload.</p>
+<p><code>POST /v1/memory/messages</code> explicitly records a bounded user-authored message and extracts only registered literal-prefix assignments:</p>
+<pre><code class="language-json">{&quot;collection_id&quot;:&quot;MEMORY_COLLECTION_UUID&quot;,&quot;external_id&quot;:&quot;message-001&quot;,
+ &quot;author&quot;:&quot;user&quot;,&quot;text&quot;:&quot;Response format: brief&quot;}
+</code></pre>
+<p>This is a deterministic, configurable assignment grammar, <strong>not arbitrary natural-language inference</strong>. Prefixes are exact, non-overlapping, single-line literals; text after the prefix must satisfy the declared scalar schema. Numeric/boolean assignments use JSON scalar syntax. Prefixes can be localized. Quoted/unmatched prose produces no candidate. Multiple conflicting assignments for one key in a message are returned in <code>ambiguous_keys</code> with no candidate for that key. <code>author=assistant</code> and unknown fields are rejected.</p>
+<p>Message external IDs are owner+collection scoped. Exact replay returns the same candidate identity; different text under the same ID conflicts. Use versioned <code>PUT /v1/memory/messages/{id}</code> to edit the source, which invalidates its prior dependent memory, then creates new candidates. GET returns the explicitly retained user text. DELETE clears text/fingerprint and invalidates dependent memory; replay of that erased message identity is refused.</p>
+<p><code>POST /v1/memory/extractions</code> accepts <code>{&quot;delivery_id&quot;:&quot;UUID&quot;,&quot;period&quot;:null}</code> for allowed current record fields, or an explicit aware period for event observations. It reads only matching collection/schema/kind/field rules. Old record versions, corrected/erased observations and uploaded files cannot create personal-memory candidates. Reprocessing deduplicates by stable source/key identity. There are no extra model calls or hidden extraction on ingestion, file upload, query or generation.</p>
+<p>All extracted items start as <code>state=candidate</code>. Inspect <code>GET /v1/memory/items?collection_id=...&amp;status=candidate&amp;limit=50</code>, then confirm intentionally:</p>
+<pre><code class="language-http">POST /v1/memory/items/{item_id}/confirm
+Content-Type: application/json
+
+{&quot;expected_version&quot;:1}
+</code></pre>
+<p>Confirmation rechecks the current source, consent, version and deletion marker. A candidate that contradicts a confirmed preference returns <code>409 memory_conflict</code>; it cannot replace that preference. Use an explicit versioned preference correction to resolve the conflict. Same-value candidates merge into the existing confirmed preference. Ordinary source updates/corrections invalidate and clear dependent values; re-extraction of the new source produces candidates requiring confirmation again. Source/message history remains separate from the current memory record.</p>
+<h3>Use a bounded context in a profile</h3>
+<p>Create a new immutable profile version with:</p>
+<pre><code class="language-json">&quot;personalization&quot;: {
+  &quot;enabled&quot;: true,
+  &quot;collections&quot;: [&quot;MEMORY_COLLECTION_UUID&quot;],
+  &quot;keys&quot;: [&quot;response_format&quot;],
+  &quot;observations&quot;: false,
+  &quot;use_feedback&quot;: true,
+  &quot;max_items&quot;: 10,
+  &quot;max_chars&quot;: 4000
+}
+</code></pre>
+<p>Personalization is supported for <code>query</code>, <code>analyze</code> and <code>recommend</code>. The profile must name non-empty unique memory collections and keys; these can differ from its data selections. Every referenced collection still needs current source grants. Owner settings must allow those collections/keys and be enabled. The profile's key order is its deterministic relevance priority; preferences and explicit assertions take precedence over observations. Only confirmed, current-source items enter the bounded context, at most 20 items/6000 serialized characters. The model is told that context is untrusted preference guidance and observations are period-bound; memory IDs are never allowed as factual source citations. Exact metrics continue to come exclusively from server computations over source data.</p>
+<p><code>memory:read</code> is required to supply values and <code>feedback:read</code> to apply feedback. Optional read rights are checked against the current live key and its captured source bounds. Missing optional rights do not grant access; a generation can proceed without that context. An initial memory read has a one-second deadline and a savepoint: errors/timeouts fall back to the base response with <code>personalization.status=unavailable</code>. No memory write is attempted after an answer. If context was actually used, its revision, versions and permissions must still match before commit; unsafe changes return <code>409 personalization_changed</code> (or a cancelled lease) for bounded retry. Such an uncommitted attempt is not a delivered answer.</p>
+<p>The result envelope now includes <code>personalization</code> status, revision, memory IDs/versions, feedback coverage and suppressed recommendation count. It does not echo private memory values as source evidence. Saved results that used memory additionally require <code>memory:read</code> to retrieve; those that used feedback additionally require <code>feedback:read</code>. Unauthorized personalized summaries are omitted from lists. Normal corrections/policy changes mark previous personalized results stale. Explicit erasure physically removes results that depended on the erased memory, including their feedback.</p>
+<p>Changes to opted-in managed context also participate in an on-change trigger's durable signature. Saving results creates no memory update, so it does not loop. Turning memory off may request one unpersonalized refresh; subsequent memory/feedback revisions while it remains off do not create personalization recalculations. Source-data triggers still operate normally. There is no automatic profile replacement, model training or guarantee that more retained data improves the user experience.</p>
+<h3>Feedback with a concrete, verifiable effect</h3>
+<p>Submit feedback about an accessible stored result:</p>
+<pre><code class="language-http">POST /v1/results/{result_id}/feedback
+Content-Type: application/json
+
+{&quot;request_id&quot;:&quot;feedback-001&quot;,&quot;rating&quot;:&quot;unhelpful&quot;,
+ &quot;decision&quot;:&quot;rejected&quot;,&quot;claim_index&quot;:0,&quot;comment&quot;:&quot;This does not fit my current goal.&quot;}
+</code></pre>
+<p><code>request_id</code> is an immutable owner-scoped idempotency key. A changed body under the same ID conflicts. Allowed ratings are <code>helpful|unhelpful</code>; decisions are <code>accepted|rejected|outdated</code>. <code>claim_index</code> addresses an existing payload claim; omission applies to all claims. At least one assessment, comment or explicit preference is required. <code>feedback:write</code> and data/source access are required. GET on that result's feedback is paginated and requires <code>feedback:read</code>; DELETE removes all feedback records for that result.</p>
+<p>For recommendations, the <strong>latest explicit decision per normalized proposal text within the same profile</strong> controls repeat suppression. Normalization is Unicode NFKC, case folding and collapsed whitespace. <code>rejected</code> and <code>outdated</code> suppress that exact normalized text; a later <code>accepted</code> decision allows it again. The server filters generated recommendation claims even if the model repeats them. If every claim is withheld, the run succeeds with <code>data_state=insufficient_data</code> and a feedback explanation. This is exact-repeat control, not a claim of semantic/paraphrase detection. Other capabilities retain feedback but do not suppress factual outputs. The effect requires both personalization opt-ins and feedback permission.</p>
+<p>An accepted proposal is <strong>not</strong> recorded as completed, executed, effective or a personal fact. A comment is not parsed into memory. If the caller explicitly provides a nested <code>preference</code> matching PreferenceWrite, it is validated as an independent user assertion and additionally needs <code>memory:write</code>, enabled owner settings, an allowed result/profile memory collection and the current preference version. Deleting feedback alone does not delete that separately asserted preference.</p>
+<p><code>GET /v1/feedback/profiles</code> reports a transparent relevance heuristic over the latest record per result/claim target: helpful+accepted minus unhelpful+rejected+outdated. It inspects at most 1000 records and reports <code>partial</code>. This is an aid for the integrating backend, not confidence or verified usefulness. Run APIs still require the caller's explicit profile ID/version; the score never silently switches profiles.</p>
+<h3>Correct, disable and forget</h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Versioned preference PUT</td>
+<td>Explicit correction; does not let a candidate override it.</td>
+</tr>
+<tr>
+<td><code>PUT /memory/settings</code> with <code>enabled=false</code></td>
+<td>Stops future context use; keeps current private values for inspection.</td>
+</tr>
+<tr>
+<td>New profile version with personalization disabled</td>
+<td>Stops that profile's context/feedback use; explicit owner settings remain separate.</td>
+</tr>
+<tr>
+<td><code>DELETE /memory/items/{id}</code></td>
+<td>Clears value/provenance/period, leaves a tombstone and collection/key suppression marker, removes dependent results and cancels active personalized work.</td>
+</tr>
+<tr>
+<td><code>DELETE /memory/messages/{id}</code></td>
+<td>Clears retained text/fingerprint and invalidates dependent values; erased receipt cannot replay.</td>
+</tr>
+<tr>
+<td><code>DELETE /memory</code></td>
+<td>Owner-wide memory-only forget: clears values/messages, blocks all declared keys from automatic replay and disables memory. Requires an unrestricted source grant. Primary sources/dialogue and separate result feedback remain separately managed.</td>
+</tr>
+<tr>
+<td>Existing source/collection/user data erasure</td>
+<td>Clears/cascades dependent memory, messages, feedback/results/jobs; primary erasure fences prevent restoration. Memory-source collections are part of profile/job privacy boundaries.</td>
+</tr>
+</tbody>
+</table>
+<p>Deleting a candidate does not delete an independent explicit preference with the same key. Suppression markers prevent automatic re-extraction under that collection/key. A new explicit preference after deletion requires <code>restore=true</code> and the appropriate current confirmed version (0 if absent); that flag never authorizes background restoration of old values. Normal source/policy changes invalidate memory and mark affected results stale; erasure removes private dependent copies physically. The current value is versioned in place; old private values are not kept as a hidden memory history.</p>
+<p>Retention is explicit: current memory, explicitly submitted user-message text and feedback persist until deletion; there is no automatic expiry. Deleted items retain opaque identity and collection/key suppression, not value/provenance. Erased messages retain their immutable receipt identity, not text/fingerprint. User/source scope erasure removes private memory configuration for that scope. Feedback cascades with its result. Backups/provider operational retention remain outside application live-data erasure.</p>
+<p>Limits per owner: 2000 memory entries including tombstones, 1000 message receipts and 5000 feedback records; messages 8000 characters, memory strings 500, comments 1000. Hitting a storage bound returns <code>422 memory_limit</code>. Settings and memory API requests are bounded to 96 KiB with a 60-second request deadline. The generation context uses the existing profile/tenant budget; deterministic extraction adds no model calls. Examples with replaceable collection UUIDs are bundled in <code>documentation/examples/memory/</code>.</p>
+</main></html>

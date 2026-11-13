@@ -1,0 +1,39 @@
+{
+  "tasks": {
+    "fields": [
+      "/caption",
+      "/phase",
+      "/estimate"
+    ],
+    "kind": "record",
+    "quantity": "/estimate",
+    "category": "/phase",
+    "query": "звіт",
+    "mode": "current"
+  },
+  "books": {
+    "fields": [
+      "/heading",
+      "/isbn",
+      "/pages"
+    ],
+    "kind": "record",
+    "quantity": "/pages",
+    "category": null,
+    "query": "Python",
+    "mode": "current"
+  },
+  "learning_sessions": {
+    "fields": [
+      "/subject",
+      "/started",
+      "/elapsed",
+      "/reflection"
+    ],
+    "kind": "event",
+    "quantity": "/elapsed",
+    "category": null,
+    "query": "SQL",
+    "mode": "history"
+  }
+}

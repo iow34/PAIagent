@@ -1,0 +1,1904 @@
+[
+  {
+    "capability": "search",
+    "domain": "tasks",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "771e649e-48cb-425c-9fd4-29a930e6bf81",
+        "object_id": "5b83fda7-83a5-4a2f-8cac-95316d39faf7",
+        "received_at": "2026-11-13T16:21:58.855281Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "771e649e-48cb-425c-9fd4-29a930e6bf81",
+        "object_id": "5b83fda7-83a5-4a2f-8cac-95316d39faf7",
+        "received_at": "2026-11-13T16:21:58.855281Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "e694cdf0-b754-4afd-8c74-e69bd0f22c64",
+      "version": 1,
+      "config": {
+        "name": "example-search",
+        "capability": "search",
+        "goal": "Use the supplied evidence for search",
+        "selections": [
+          {
+            "collection_id": "78e1f4f1-bfcb-4501-adbd-b19eed590ff3",
+            "schema_version": 1,
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ],
+            "kind": "record",
+            "mode": "current",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": null,
+        "metrics": [],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:21:59.054257Z"
+    },
+    "result": {
+      "run_id": "a03ffaad-e86a-4747-b269-87792cef0ac9",
+      "result_id": "5aa1e5c8-221b-4cc4-8d8c-57f860201e46",
+      "capability": "search",
+      "profile_id": "e694cdf0-b754-4afd-8c74-e69bd0f22c64",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "partial",
+      "payload": {
+        "items": [
+          {
+            "id": "771e649e-48cb-425c-9fd4-29a930e6bf81",
+            "content": "{\"/caption\": \"Підготувати звіт\", \"/phase\": \"todo\", \"/estimate\": null}",
+            "event_id": null,
+            "position": {
+              "fields": [
+                "/caption",
+                "/phase",
+                "/estimate"
+              ]
+            },
+            "object_id": "5b83fda7-83a5-4a2f-8cac-95316d39faf7",
+            "selection": 0,
+            "source_id": "0bdc8234-d783-4196-860c-ec08081f10b6",
+            "delivery_id": "771e649e-48cb-425c-9fd4-29a930e6bf81",
+            "occurred_at": "2026-11-13T16:21:58.846531+00:00",
+            "collection_id": "78e1f4f1-bfcb-4501-adbd-b19eed590ff3",
+            "evidence_path": "/v1/events/771e649e-48cb-425c-9fd4-29a930e6bf81",
+            "object_version": 1,
+            "schema_version": 1
+          }
+        ]
+      },
+      "sources": [
+        {
+          "id": "771e649e-48cb-425c-9fd4-29a930e6bf81",
+          "content": "{\"/caption\": \"Підготувати звіт\", \"/phase\": \"todo\", \"/estimate\": null}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ]
+          },
+          "object_id": "5b83fda7-83a5-4a2f-8cac-95316d39faf7",
+          "selection": 0,
+          "source_id": "0bdc8234-d783-4196-860c-ec08081f10b6",
+          "delivery_id": "771e649e-48cb-425c-9fd4-29a930e6bf81",
+          "occurred_at": "2026-11-13T16:21:58.846531+00:00",
+          "collection_id": "78e1f4f1-bfcb-4501-adbd-b19eed590ff3",
+          "evidence_path": "/v1/events/771e649e-48cb-425c-9fd4-29a930e6bf81",
+          "object_version": 1,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "record",
+            "mode": "current",
+            "selection": 0,
+            "matched_rows": 1,
+            "collection_id": "78e1f4f1-bfcb-4501-adbd-b19eed590ff3",
+            "selected_rows": 1,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": true,
+        "selected_source_count": 1,
+        "processed_source_count": 1,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:21:59.121005Z",
+      "data_as_of": "2026-11-13T16:21:59.108834Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 0,
+        "input_token_reservation": 0,
+        "output_token_reservation": 0
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "e694cdf0-b754-4afd-8c74-e69bd0f22c64",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "звіт",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "19d47269-8343-46a1-b67e-c1ec15c3bef2",
+      "next_due_at": "2026-11-13T17:21:59.316625Z",
+      "last_checked_at": "2026-11-13T16:21:59.316625Z",
+      "error_code": null
+    }
+  },
+  {
+    "capability": "query",
+    "domain": "tasks",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "c22d7e32-1f69-4571-a252-85f464b655e9",
+        "object_id": "5714fc53-35b6-4211-b182-86ec865adad0",
+        "received_at": "2026-11-13T16:22:00.718988Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "c22d7e32-1f69-4571-a252-85f464b655e9",
+        "object_id": "5714fc53-35b6-4211-b182-86ec865adad0",
+        "received_at": "2026-11-13T16:22:00.718988Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "9a7b66f7-7fc3-4cd2-9187-7cca631b9cf9",
+      "version": 1,
+      "config": {
+        "name": "example-query",
+        "capability": "query",
+        "goal": "Use the supplied evidence for query",
+        "selections": [
+          {
+            "collection_id": "7235c5e2-0fe2-43ca-8b2c-9ee6c56eccaa",
+            "schema_version": 1,
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ],
+            "kind": "record",
+            "mode": "current",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": null,
+        "metrics": [],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:22:00.909477Z"
+    },
+    "result": {
+      "run_id": "165b00ce-911f-49a8-978a-7ae7616e5ae7",
+      "result_id": "06633b13-d53f-4acc-8d53-c4ee51bbdc5f",
+      "capability": "query",
+      "profile_id": "9a7b66f7-7fc3-4cd2-9187-7cca631b9cf9",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "partial",
+      "payload": {
+        "claims": [
+          {
+            "text": "Підтверджене спостереження",
+            "source_ids": [
+              "c22d7e32-1f69-4571-a252-85f464b655e9"
+            ]
+          }
+        ],
+        "limitations": []
+      },
+      "sources": [
+        {
+          "id": "c22d7e32-1f69-4571-a252-85f464b655e9",
+          "content": "{\"/caption\": \"Підготувати звіт\", \"/phase\": \"todo\", \"/estimate\": null}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ]
+          },
+          "object_id": "5714fc53-35b6-4211-b182-86ec865adad0",
+          "selection": 0,
+          "source_id": "d4c8273a-79b1-44d9-ad03-fde863f7ea82",
+          "delivery_id": "c22d7e32-1f69-4571-a252-85f464b655e9",
+          "occurred_at": "2026-11-13T16:22:00.708007+00:00",
+          "collection_id": "7235c5e2-0fe2-43ca-8b2c-9ee6c56eccaa",
+          "evidence_path": "/v1/events/c22d7e32-1f69-4571-a252-85f464b655e9",
+          "object_version": 1,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "record",
+            "mode": "current",
+            "selection": 0,
+            "matched_rows": 1,
+            "collection_id": "7235c5e2-0fe2-43ca-8b2c-9ee6c56eccaa",
+            "selected_rows": 1,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": true,
+        "selected_source_count": 1,
+        "processed_source_count": 1,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:22:00.943869Z",
+      "data_as_of": "2026-11-13T16:22:00.936597Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 1,
+        "input_token_reservation": 3198,
+        "output_token_reservation": 2000
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "9a7b66f7-7fc3-4cd2-9187-7cca631b9cf9",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "звіт",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "4f9185dc-b474-44ec-885d-0cbaab34a387",
+      "next_due_at": "2026-11-13T17:22:00.982432Z",
+      "last_checked_at": "2026-11-13T16:22:00.982432Z",
+      "error_code": null
+    }
+  },
+  {
+    "capability": "summarize",
+    "domain": "tasks",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "03deea3c-50a5-47dd-b8ab-894088fc28ad",
+        "object_id": "7e3983d4-fd3f-4cc9-b2de-1e4661d1ec75",
+        "received_at": "2026-11-13T16:22:02.294942Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "03deea3c-50a5-47dd-b8ab-894088fc28ad",
+        "object_id": "7e3983d4-fd3f-4cc9-b2de-1e4661d1ec75",
+        "received_at": "2026-11-13T16:22:02.294942Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "ecc812c5-7777-4923-8a69-1996913617ed",
+      "version": 1,
+      "config": {
+        "name": "example-summarize",
+        "capability": "summarize",
+        "goal": "Use the supplied evidence for summarize",
+        "selections": [
+          {
+            "collection_id": "a6b87df8-48e2-447a-84f6-49ebfb429812",
+            "schema_version": 1,
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ],
+            "kind": "record",
+            "mode": "current",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": null,
+        "metrics": [],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:22:02.479903Z"
+    },
+    "result": {
+      "run_id": "5f134d05-c337-4e52-b800-fad9a15f544b",
+      "result_id": "4a3a7308-c41c-4c6e-b9b0-1b0df7427112",
+      "capability": "summarize",
+      "profile_id": "ecc812c5-7777-4923-8a69-1996913617ed",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "sufficient",
+      "payload": {
+        "claims": [
+          {
+            "text": "Підтверджене спостереження",
+            "source_ids": [
+              "03deea3c-50a5-47dd-b8ab-894088fc28ad"
+            ]
+          }
+        ],
+        "limitations": []
+      },
+      "sources": [
+        {
+          "id": "03deea3c-50a5-47dd-b8ab-894088fc28ad",
+          "content": "{\"/caption\": \"Підготувати звіт\", \"/phase\": \"todo\", \"/estimate\": null}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ]
+          },
+          "object_id": "7e3983d4-fd3f-4cc9-b2de-1e4661d1ec75",
+          "selection": 0,
+          "source_id": "d42ccfd5-17ae-48e6-aaa6-57e93519016d",
+          "delivery_id": "03deea3c-50a5-47dd-b8ab-894088fc28ad",
+          "occurred_at": "2026-11-13T16:22:02.287125+00:00",
+          "collection_id": "a6b87df8-48e2-447a-84f6-49ebfb429812",
+          "evidence_path": "/v1/events/03deea3c-50a5-47dd-b8ab-894088fc28ad",
+          "object_version": 1,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "record",
+            "mode": "current",
+            "selection": 0,
+            "matched_rows": 1,
+            "collection_id": "a6b87df8-48e2-447a-84f6-49ebfb429812",
+            "selected_rows": 1,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": false,
+        "selected_source_count": 1,
+        "processed_source_count": 1,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:22:02.508932Z",
+      "data_as_of": "2026-11-13T16:22:02.503132Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 1,
+        "input_token_reservation": 3218,
+        "output_token_reservation": 2000
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "ecc812c5-7777-4923-8a69-1996913617ed",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "звіт",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "921da1c2-468a-4e93-acf2-717e08801d26",
+      "next_due_at": "2026-11-13T17:22:02.544813Z",
+      "last_checked_at": "2026-11-13T16:22:02.544813Z",
+      "error_code": null
+    }
+  },
+  {
+    "capability": "extract",
+    "domain": "tasks",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "59585660-e877-4ef8-b270-518f380fcf63",
+        "object_id": "12d9bad4-ae0b-48f2-8b1c-5d5d45594332",
+        "received_at": "2026-11-13T16:22:03.910599Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "59585660-e877-4ef8-b270-518f380fcf63",
+        "object_id": "12d9bad4-ae0b-48f2-8b1c-5d5d45594332",
+        "received_at": "2026-11-13T16:22:03.910599Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "72c9f091-06a5-42ef-a4d0-832a349ae194",
+      "version": 1,
+      "config": {
+        "name": "example-extract",
+        "capability": "extract",
+        "goal": "Use the supplied evidence for extract",
+        "selections": [
+          {
+            "collection_id": "bed82af3-2543-4d47-b190-ef8c19d8faf5",
+            "schema_version": 1,
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ],
+            "kind": "record",
+            "mode": "current",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "category"
+          ],
+          "properties": {
+            "category": {
+              "enum": [
+                "work",
+                "personal",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 30
+            }
+          },
+          "additionalProperties": false
+        },
+        "metrics": [],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:22:04.092278Z"
+    },
+    "result": {
+      "run_id": "7fe08f83-96f4-4c7d-900e-d35420762cf9",
+      "result_id": "2b5a9937-4277-42c7-8b5a-0bb535ff9d5b",
+      "capability": "extract",
+      "profile_id": "72c9f091-06a5-42ef-a4d0-832a349ae194",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "sufficient",
+      "payload": {
+        "data": {
+          "category": "work"
+        },
+        "claims": [
+          {
+            "text": "Підтверджене спостереження",
+            "source_ids": [
+              "59585660-e877-4ef8-b270-518f380fcf63"
+            ]
+          }
+        ],
+        "source_ids": [
+          "59585660-e877-4ef8-b270-518f380fcf63"
+        ],
+        "limitations": []
+      },
+      "sources": [
+        {
+          "id": "59585660-e877-4ef8-b270-518f380fcf63",
+          "content": "{\"/caption\": \"Підготувати звіт\", \"/phase\": \"todo\", \"/estimate\": null}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ]
+          },
+          "object_id": "12d9bad4-ae0b-48f2-8b1c-5d5d45594332",
+          "selection": 0,
+          "source_id": "4fb2cfbc-ee16-49e7-86dd-8e433452d64b",
+          "delivery_id": "59585660-e877-4ef8-b270-518f380fcf63",
+          "occurred_at": "2026-11-13T16:22:03.902807+00:00",
+          "collection_id": "bed82af3-2543-4d47-b190-ef8c19d8faf5",
+          "evidence_path": "/v1/events/59585660-e877-4ef8-b270-518f380fcf63",
+          "object_version": 1,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "record",
+            "mode": "current",
+            "selection": 0,
+            "matched_rows": 1,
+            "collection_id": "bed82af3-2543-4d47-b190-ef8c19d8faf5",
+            "selected_rows": 1,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": false,
+        "selected_source_count": 1,
+        "processed_source_count": 1,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:22:04.123601Z",
+      "data_as_of": "2026-11-13T16:22:04.117895Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 1,
+        "input_token_reservation": 3544,
+        "output_token_reservation": 2000
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "72c9f091-06a5-42ef-a4d0-832a349ae194",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "звіт",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "0bc3ba18-f664-4916-9eab-ccc7873a9368",
+      "next_due_at": "2026-11-13T17:22:04.156223Z",
+      "last_checked_at": "2026-11-13T16:22:04.156223Z",
+      "error_code": null
+    }
+  },
+  {
+    "capability": "analyze",
+    "domain": "tasks",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "bf403a7c-bd78-42b4-ac45-fadeca098ead",
+        "object_id": "d4e04d23-26de-4937-bcfd-b2eeb30a1b8d",
+        "received_at": "2026-11-13T16:22:05.408473Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "bf403a7c-bd78-42b4-ac45-fadeca098ead",
+        "object_id": "d4e04d23-26de-4937-bcfd-b2eeb30a1b8d",
+        "received_at": "2026-11-13T16:22:05.408473Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "1860ea8a-cd46-4c46-bf91-55ecc26fb715",
+      "version": 1,
+      "config": {
+        "name": "example-analyze",
+        "capability": "analyze",
+        "goal": "Use the supplied evidence for analyze",
+        "selections": [
+          {
+            "collection_id": "014c70ed-a829-4755-a723-b671287f317f",
+            "schema_version": 1,
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ],
+            "kind": "record",
+            "mode": "current",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": null,
+        "metrics": [
+          {
+            "name": "records",
+            "selection": 0,
+            "operation": "count",
+            "field": null,
+            "group_by": null,
+            "interval": null
+          },
+          {
+            "name": "average_estimate",
+            "selection": 0,
+            "operation": "average",
+            "field": "/estimate",
+            "group_by": "/phase",
+            "interval": null
+          }
+        ],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:22:05.593206Z"
+    },
+    "result": {
+      "run_id": "68320639-73f0-4115-8375-be8423f16ab5",
+      "result_id": "c4429292-eed7-4678-9ef5-d3588dd70229",
+      "capability": "analyze",
+      "profile_id": "1860ea8a-cd46-4c46-bf91-55ecc26fb715",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "sufficient",
+      "payload": {
+        "claims": [
+          {
+            "text": "Підтверджене спостереження",
+            "source_ids": [
+              "bf403a7c-bd78-42b4-ac45-fadeca098ead"
+            ]
+          }
+        ],
+        "metrics": [
+          {
+            "name": "records",
+            "unit": "1",
+            "group": null,
+            "value": "1",
+            "bucket": null,
+            "period": "primary",
+            "rounding": "ROUND_HALF_EVEN",
+            "timezone": "UTC",
+            "operation": "count",
+            "selection": 0,
+            "null_count": 0,
+            "source_ids": [
+              "bf403a7c-bd78-42b4-ac45-fadeca098ead"
+            ],
+            "denominator": null,
+            "value_count": 1,
+            "sample_count": 1,
+            "decimal_precision": 650
+          },
+          {
+            "name": "average_estimate",
+            "unit": "hour",
+            "group": "todo",
+            "value": null,
+            "bucket": null,
+            "period": "primary",
+            "rounding": "ROUND_HALF_EVEN",
+            "timezone": "UTC",
+            "operation": "average",
+            "selection": 0,
+            "null_count": 1,
+            "source_ids": [
+              "bf403a7c-bd78-42b4-ac45-fadeca098ead"
+            ],
+            "denominator": 0,
+            "value_count": 0,
+            "sample_count": 1,
+            "decimal_precision": 650
+          }
+        ],
+        "limitations": []
+      },
+      "sources": [
+        {
+          "id": "bf403a7c-bd78-42b4-ac45-fadeca098ead",
+          "content": "{\"/caption\": \"Підготувати звіт\", \"/phase\": \"todo\", \"/estimate\": null}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ]
+          },
+          "object_id": "d4e04d23-26de-4937-bcfd-b2eeb30a1b8d",
+          "selection": 0,
+          "source_id": "e8d451ce-09ff-4368-9660-9f8150fb3aa2",
+          "delivery_id": "bf403a7c-bd78-42b4-ac45-fadeca098ead",
+          "occurred_at": "2026-11-13T16:22:05.400520+00:00",
+          "collection_id": "014c70ed-a829-4755-a723-b671287f317f",
+          "evidence_path": "/v1/events/bf403a7c-bd78-42b4-ac45-fadeca098ead",
+          "object_version": 1,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "record",
+            "mode": "current",
+            "selection": 0,
+            "matched_rows": 1,
+            "collection_id": "014c70ed-a829-4755-a723-b671287f317f",
+            "selected_rows": 1,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": false,
+        "selected_source_count": 1,
+        "processed_source_count": 1,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:22:05.622385Z",
+      "data_as_of": "2026-11-13T16:22:05.616347Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 1,
+        "input_token_reservation": 3804,
+        "output_token_reservation": 2000
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "1860ea8a-cd46-4c46-bf91-55ecc26fb715",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "звіт",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "d10fb949-29a6-445a-b64c-bd17ca36b8de",
+      "next_due_at": "2026-11-13T17:22:05.658205Z",
+      "last_checked_at": "2026-11-13T16:22:05.658205Z",
+      "error_code": null
+    }
+  },
+  {
+    "capability": "recommend",
+    "domain": "tasks",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "7bb148db-6c06-4e51-9e86-fbe1faa958d4",
+        "object_id": "8dbd9f37-e6fa-4b8c-b963-ab305b039bbf",
+        "received_at": "2026-11-13T16:22:06.914817Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "7bb148db-6c06-4e51-9e86-fbe1faa958d4",
+        "object_id": "8dbd9f37-e6fa-4b8c-b963-ab305b039bbf",
+        "received_at": "2026-11-13T16:22:06.914817Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "85c53abf-53c8-494d-88d9-b2787d477d6a",
+      "version": 1,
+      "config": {
+        "name": "example-recommend",
+        "capability": "recommend",
+        "goal": "Use the supplied evidence for recommend",
+        "selections": [
+          {
+            "collection_id": "9cbf2c74-15a6-4842-bd54-5fe02caee8c5",
+            "schema_version": 1,
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ],
+            "kind": "record",
+            "mode": "current",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": null,
+        "metrics": [],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:22:07.098327Z"
+    },
+    "result": {
+      "run_id": "ffdc4692-b5c2-40cd-a6d3-c9725f7396be",
+      "result_id": "df61c1d6-f810-4040-aed5-73dd2e472e24",
+      "capability": "recommend",
+      "profile_id": "85c53abf-53c8-494d-88d9-b2787d477d6a",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "sufficient",
+      "payload": {
+        "claims": [
+          {
+            "text": "Підтверджене спостереження",
+            "source_ids": [
+              "7bb148db-6c06-4e51-9e86-fbe1faa958d4"
+            ]
+          }
+        ],
+        "limitations": []
+      },
+      "sources": [
+        {
+          "id": "7bb148db-6c06-4e51-9e86-fbe1faa958d4",
+          "content": "{\"/caption\": \"Підготувати звіт\", \"/phase\": \"todo\", \"/estimate\": null}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/caption",
+              "/phase",
+              "/estimate"
+            ]
+          },
+          "object_id": "8dbd9f37-e6fa-4b8c-b963-ab305b039bbf",
+          "selection": 0,
+          "source_id": "e981e2f3-d82f-4093-9031-638a88d2aaa3",
+          "delivery_id": "7bb148db-6c06-4e51-9e86-fbe1faa958d4",
+          "occurred_at": "2026-11-13T16:22:06.906768+00:00",
+          "collection_id": "9cbf2c74-15a6-4842-bd54-5fe02caee8c5",
+          "evidence_path": "/v1/events/7bb148db-6c06-4e51-9e86-fbe1faa958d4",
+          "object_version": 1,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "record",
+            "mode": "current",
+            "selection": 0,
+            "matched_rows": 1,
+            "collection_id": "9cbf2c74-15a6-4842-bd54-5fe02caee8c5",
+            "selected_rows": 1,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": false,
+        "selected_source_count": 1,
+        "processed_source_count": 1,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:22:07.129436Z",
+      "data_as_of": "2026-11-13T16:22:07.123767Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 1,
+        "input_token_reservation": 3218,
+        "output_token_reservation": 2000
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "85c53abf-53c8-494d-88d9-b2787d477d6a",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "звіт",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "5a78e95a-31f5-40cf-bbd4-c4bddcc8940a",
+      "next_due_at": "2026-11-13T17:22:07.164857Z",
+      "last_checked_at": "2026-11-13T16:22:07.164857Z",
+      "error_code": null
+    }
+  },
+  {
+    "memory_feedback": {
+      "settings": {
+        "version": 1,
+        "enabled": true,
+        "config": {
+          "collections": [
+            "9cbf2c74-15a6-4842-bd54-5fe02caee8c5"
+          ],
+          "definitions": [
+            {
+              "key": "response_format",
+              "value_schema": {
+                "type": "string",
+                "maxLength": 20,
+                "enum": [
+                  "brief",
+                  "detailed"
+                ]
+              },
+              "message_prefixes": []
+            }
+          ],
+          "field_rules": []
+        }
+      },
+      "preference": {
+        "id": "91a3b776-f561-4dd8-a329-c3e5af1f599f",
+        "collection_id": "9cbf2c74-15a6-4842-bd54-5fe02caee8c5",
+        "source_id": "e981e2f3-d82f-4093-9031-638a88d2aaa3",
+        "key": "response_format",
+        "kind": "preference",
+        "state": "confirmed",
+        "version": 1,
+        "origin": "explicit",
+        "value": "brief",
+        "provenance": {
+          "asserted_by": "user_api"
+        },
+        "period": null,
+        "created_at": "2026-11-13T16:22:08.541727Z",
+        "updated_at": "2026-11-13T16:22:08.541727Z"
+      },
+      "feedback": {
+        "id": "e1cdfcf1-9dae-4361-ae62-6a8e1b6de904",
+        "result_id": "df61c1d6-f810-4040-aed5-73dd2e472e24",
+        "profile_id": "85c53abf-53c8-494d-88d9-b2787d477d6a",
+        "request_id": "demo-e0c2ee5aa7ac4c649b8d018dcbbc6c01",
+        "rating": "helpful",
+        "decision": null,
+        "claim_index": null,
+        "comment": "",
+        "revision": 3,
+        "created_at": "2026-11-13T16:22:08.552232Z",
+        "effect": "Exact normalized recommendation repeats are suppressed by the latest decision within this profile; acceptance is not execution."
+      },
+      "forgotten": {
+        "id": "91a3b776-f561-4dd8-a329-c3e5af1f599f",
+        "collection_id": "9cbf2c74-15a6-4842-bd54-5fe02caee8c5",
+        "source_id": "e981e2f3-d82f-4093-9031-638a88d2aaa3",
+        "key": "response_format",
+        "kind": "preference",
+        "state": "deleted",
+        "version": 2,
+        "origin": "explicit",
+        "value": null,
+        "provenance": {
+          "reason": "user_deleted"
+        },
+        "period": null,
+        "created_at": "2026-11-13T16:22:08.541727Z",
+        "updated_at": "2026-11-13T16:22:08.570332Z"
+      },
+      "disabled": {
+        "version": 5,
+        "enabled": false,
+        "config": {
+          "collections": [
+            "9cbf2c74-15a6-4842-bd54-5fe02caee8c5"
+          ],
+          "definitions": [
+            {
+              "key": "response_format",
+              "value_schema": {
+                "type": "string",
+                "maxLength": 20,
+                "enum": [
+                  "brief",
+                  "detailed"
+                ]
+              },
+              "message_prefixes": []
+            }
+          ],
+          "field_rules": []
+        }
+      }
+    }
+  },
+  {
+    "errors": [
+      {
+        "method": "POST",
+        "path": "/v1/collections/9cbf2c74-15a6-4842-bd54-5fe02caee8c5/schemas",
+        "request": {
+          "kind": "record",
+          "version": 2,
+          "json_schema": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "status": 422,
+        "response": {
+          "status_code": 422,
+          "detail": "Objects require properties and additionalProperties: false.",
+          "extra": {
+            "code": "invalid_contract",
+            "issues": [
+              {
+                "path": "",
+                "message": "Objects require properties and additionalProperties: false."
+              }
+            ]
+          }
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/memory/preferences",
+        "request": {
+          "collection_id": "9cbf2c74-15a6-4842-bd54-5fe02caee8c5",
+          "key": "response_format",
+          "value": "brief"
+        },
+        "status": 422,
+        "response": {
+          "status_code": 422,
+          "detail": "Managed memory is disabled.",
+          "extra": {
+            "code": "memory_disabled",
+            "issues": []
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/v1/results/df61c1d6-f810-4040-aed5-73dd2e472e24/feedback",
+        "request": {
+          "request_id": "demo-e0c2ee5aa7ac4c649b8d018dcbbc6c01",
+          "rating": "unhelpful"
+        },
+        "status": 409,
+        "response": {
+          "status_code": 409,
+          "detail": "Feedback request ID is immutable.",
+          "extra": {
+            "code": "feedback_conflict"
+          }
+        }
+      }
+    ],
+    "erasure": {
+      "method": "DELETE",
+      "path": "/v1/records/8dbd9f37-e6fa-4b8c-b963-ab305b039bbf",
+      "status": 200,
+      "response": {
+        "erased": true,
+        "objects_erased": 1,
+        "identity_reusable": false
+      },
+      "subsequent_get_status": 404
+    }
+  },
+  {
+    "capability": "search",
+    "domain": "books",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "407bc5ee-e873-485d-90d8-2f06566516de",
+        "object_id": "17991ddd-f00a-40ab-bc19-83bbc343f172",
+        "received_at": "2026-11-13T16:22:09.127637Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "407bc5ee-e873-485d-90d8-2f06566516de",
+        "object_id": "17991ddd-f00a-40ab-bc19-83bbc343f172",
+        "received_at": "2026-11-13T16:22:09.127637Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "e20bea26-a150-4f98-a943-23fd8e4da915",
+      "version": 1,
+      "config": {
+        "name": "example-search",
+        "capability": "search",
+        "goal": "Use the supplied evidence for search",
+        "selections": [
+          {
+            "collection_id": "f962999f-cda4-4ebf-a168-6a9d6b569195",
+            "schema_version": 1,
+            "fields": [
+              "/heading",
+              "/isbn",
+              "/pages"
+            ],
+            "kind": "record",
+            "mode": "current",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": null,
+        "metrics": [],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:22:09.326059Z"
+    },
+    "result": {
+      "run_id": "1a6b636d-0104-439c-9431-96f834af07b1",
+      "result_id": "fea8cd70-83ec-4f0e-af17-ee2a2c438425",
+      "capability": "search",
+      "profile_id": "e20bea26-a150-4f98-a943-23fd8e4da915",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "partial",
+      "payload": {
+        "items": [
+          {
+            "id": "0c3ff6de-c2c7-4b5a-8d83-6340b1c580ce",
+            "content": "{\"/heading\": \"Основи Python\", \"/isbn\": \"example-book-001\", \"/pages\": 320}",
+            "event_id": null,
+            "position": {
+              "fields": [
+                "/heading",
+                "/isbn",
+                "/pages"
+              ]
+            },
+            "object_id": "65f31c22-027b-420f-b650-e8e5eace7e28",
+            "selection": 0,
+            "source_id": "0ace2d71-db46-4640-a7c9-345ea9fe6f6a",
+            "delivery_id": "0c3ff6de-c2c7-4b5a-8d83-6340b1c580ce",
+            "occurred_at": "2026-11-13T16:22:09.149214+00:00",
+            "collection_id": "f962999f-cda4-4ebf-a168-6a9d6b569195",
+            "evidence_path": "/v1/events/0c3ff6de-c2c7-4b5a-8d83-6340b1c580ce",
+            "object_version": 1,
+            "schema_version": 1
+          },
+          {
+            "id": "e615e5ed-290b-43cb-a70b-cb1873e21b89",
+            "content": "{\"/heading\": \"Основи Python\", \"/isbn\": \"example-book-001\", \"/pages\": 320}",
+            "event_id": null,
+            "position": {
+              "fields": [
+                "/heading",
+                "/isbn",
+                "/pages"
+              ]
+            },
+            "object_id": "60556db7-d436-46c5-9a42-1ab8d78e5b59",
+            "selection": 0,
+            "source_id": "0ace2d71-db46-4640-a7c9-345ea9fe6f6a",
+            "delivery_id": "e615e5ed-290b-43cb-a70b-cb1873e21b89",
+            "occurred_at": "2026-11-13T16:22:09.149214+00:00",
+            "collection_id": "f962999f-cda4-4ebf-a168-6a9d6b569195",
+            "evidence_path": "/v1/events/e615e5ed-290b-43cb-a70b-cb1873e21b89",
+            "object_version": 1,
+            "schema_version": 1
+          }
+        ]
+      },
+      "sources": [
+        {
+          "id": "0c3ff6de-c2c7-4b5a-8d83-6340b1c580ce",
+          "content": "{\"/heading\": \"Основи Python\", \"/isbn\": \"example-book-001\", \"/pages\": 320}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/heading",
+              "/isbn",
+              "/pages"
+            ]
+          },
+          "object_id": "65f31c22-027b-420f-b650-e8e5eace7e28",
+          "selection": 0,
+          "source_id": "0ace2d71-db46-4640-a7c9-345ea9fe6f6a",
+          "delivery_id": "0c3ff6de-c2c7-4b5a-8d83-6340b1c580ce",
+          "occurred_at": "2026-11-13T16:22:09.149214+00:00",
+          "collection_id": "f962999f-cda4-4ebf-a168-6a9d6b569195",
+          "evidence_path": "/v1/events/0c3ff6de-c2c7-4b5a-8d83-6340b1c580ce",
+          "object_version": 1,
+          "schema_version": 1
+        },
+        {
+          "id": "e615e5ed-290b-43cb-a70b-cb1873e21b89",
+          "content": "{\"/heading\": \"Основи Python\", \"/isbn\": \"example-book-001\", \"/pages\": 320}",
+          "event_id": null,
+          "position": {
+            "fields": [
+              "/heading",
+              "/isbn",
+              "/pages"
+            ]
+          },
+          "object_id": "60556db7-d436-46c5-9a42-1ab8d78e5b59",
+          "selection": 0,
+          "source_id": "0ace2d71-db46-4640-a7c9-345ea9fe6f6a",
+          "delivery_id": "e615e5ed-290b-43cb-a70b-cb1873e21b89",
+          "occurred_at": "2026-11-13T16:22:09.149214+00:00",
+          "collection_id": "f962999f-cda4-4ebf-a168-6a9d6b569195",
+          "evidence_path": "/v1/events/e615e5ed-290b-43cb-a70b-cb1873e21b89",
+          "object_version": 1,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "record",
+            "mode": "current",
+            "selection": 0,
+            "matched_rows": 2,
+            "collection_id": "f962999f-cda4-4ebf-a168-6a9d6b569195",
+            "selected_rows": 2,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": true,
+        "selected_source_count": 2,
+        "processed_source_count": 2,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:22:09.380159Z",
+      "data_as_of": "2026-11-13T16:22:09.373054Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 0,
+        "input_token_reservation": 0,
+        "output_token_reservation": 0
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "e20bea26-a150-4f98-a943-23fd8e4da915",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "Python",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "e028cc43-be23-41b3-9ec5-931fb1c4f1ef",
+      "next_due_at": "2026-11-13T17:22:09.588734Z",
+      "last_checked_at": "2026-11-13T16:22:09.588734Z",
+      "error_code": null
+    }
+  },
+  {
+    "capability": "analyze",
+    "domain": "learning_sessions",
+    "delivery": {
+      "collection": "tasks",
+      "ack": {
+        "status": "accepted",
+        "delivery_id": "96aeb20c-ce23-4723-9a98-f129e58839fb",
+        "object_id": "2ad3e812-048b-4c95-b4f5-c74f6a296cfc",
+        "received_at": "2026-11-13T16:22:10.956388Z",
+        "error": null,
+        "index": 0
+      },
+      "replay": {
+        "status": "duplicate",
+        "delivery_id": "96aeb20c-ce23-4723-9a98-f129e58839fb",
+        "object_id": "2ad3e812-048b-4c95-b4f5-c74f6a296cfc",
+        "received_at": "2026-11-13T16:22:10.956388Z",
+        "error": null,
+        "index": 0
+      }
+    },
+    "profile": {
+      "profile_id": "3bb808c7-aeed-455f-9a7f-309194c5468e",
+      "version": 1,
+      "config": {
+        "name": "example-analyze",
+        "capability": "analyze",
+        "goal": "Use the supplied evidence for analyze",
+        "selections": [
+          {
+            "collection_id": "ceded08a-af9c-4652-acc8-ec389b4f4eed",
+            "schema_version": 1,
+            "fields": [
+              "/subject",
+              "/started",
+              "/elapsed",
+              "/reflection"
+            ],
+            "kind": "event",
+            "mode": "history",
+            "filters": [],
+            "time_field": "occurred_at",
+            "include_text": false
+          }
+        ],
+        "period": null,
+        "comparison_period": null,
+        "timezone": "UTC",
+        "constraints": [],
+        "language": "uk",
+        "output_schema": null,
+        "metrics": [
+          {
+            "name": "records",
+            "selection": 0,
+            "operation": "count",
+            "field": null,
+            "group_by": null,
+            "interval": null
+          },
+          {
+            "name": "average_estimate",
+            "selection": 0,
+            "operation": "average",
+            "field": "/elapsed",
+            "group_by": null,
+            "interval": null
+          }
+        ],
+        "personalization": {
+          "enabled": false,
+          "collections": [],
+          "keys": [],
+          "observations": false,
+          "use_feedback": true,
+          "max_items": 10,
+          "max_chars": 4000
+        },
+        "minimum_samples": 1,
+        "budget": {
+          "max_attempts": 3,
+          "retry_seconds": 5,
+          "tool_calls": 0,
+          "max_records": 1000,
+          "max_fragments": 1000,
+          "context_chars": 24000,
+          "model_calls": 16,
+          "input_tokens": 64000,
+          "output_tokens": 16000,
+          "per_call_output_tokens": 2000,
+          "seconds": 50
+        }
+      },
+      "created_at": "2026-11-13T16:22:11.143246Z"
+    },
+    "result": {
+      "run_id": "feb2c561-1a0b-4cd9-86b2-269f2e452edd",
+      "result_id": "163393c3-8521-4fd5-a056-05e2a62d703b",
+      "capability": "analyze",
+      "profile_id": "3bb808c7-aeed-455f-9a7f-309194c5468e",
+      "profile_version": 1,
+      "execution_status": "succeeded",
+      "data_state": "sufficient",
+      "payload": {
+        "claims": [
+          {
+            "text": "Підтверджене спостереження",
+            "source_ids": [
+              "255029c2-7cd1-4d50-8a67-a2a99b08616d"
+            ]
+          }
+        ],
+        "metrics": [
+          {
+            "name": "records",
+            "unit": "1",
+            "group": null,
+            "value": "1",
+            "bucket": null,
+            "period": "primary",
+            "rounding": "ROUND_HALF_EVEN",
+            "timezone": "UTC",
+            "operation": "count",
+            "selection": 0,
+            "null_count": 0,
+            "source_ids": [
+              "255029c2-7cd1-4d50-8a67-a2a99b08616d"
+            ],
+            "denominator": null,
+            "value_count": 1,
+            "sample_count": 1,
+            "decimal_precision": 650
+          },
+          {
+            "name": "average_estimate",
+            "unit": "second",
+            "group": null,
+            "value": "2700",
+            "bucket": null,
+            "period": "primary",
+            "rounding": "ROUND_HALF_EVEN",
+            "timezone": "UTC",
+            "operation": "average",
+            "selection": 0,
+            "null_count": 0,
+            "source_ids": [
+              "255029c2-7cd1-4d50-8a67-a2a99b08616d"
+            ],
+            "denominator": 1,
+            "value_count": 1,
+            "sample_count": 1,
+            "decimal_precision": 650
+          }
+        ],
+        "limitations": []
+      },
+      "sources": [
+        {
+          "id": "255029c2-7cd1-4d50-8a67-a2a99b08616d",
+          "content": "{\"/subject\": \"SQL joins\", \"/started\": \"2026-11-12T09:00:00+01:00\", \"/elapsed\": 2700, \"/reflection\": \"Практика із зовнішніми ключами\"}",
+          "event_id": "session-1",
+          "position": {
+            "fields": [
+              "/subject",
+              "/started",
+              "/elapsed",
+              "/reflection"
+            ]
+          },
+          "object_id": null,
+          "selection": 0,
+          "source_id": "85b9694e-0d1d-47ad-a03a-33afbb8dcd48",
+          "delivery_id": "255029c2-7cd1-4d50-8a67-a2a99b08616d",
+          "occurred_at": "2026-11-13T16:22:11.122492+00:00",
+          "collection_id": "ceded08a-af9c-4652-acc8-ec389b4f4eed",
+          "evidence_path": "/v1/events/255029c2-7cd1-4d50-8a67-a2a99b08616d",
+          "object_version": null,
+          "schema_version": 1
+        }
+      ],
+      "period": null,
+      "comparison_period": null,
+      "timezone": "UTC",
+      "coverage": {
+        "selections": [
+          {
+            "kind": "event",
+            "mode": "history",
+            "selection": 0,
+            "matched_rows": 1,
+            "collection_id": "ceded08a-af9c-4652-acc8-ec389b4f4eed",
+            "selected_rows": 1,
+            "schema_version": 1,
+            "history_complete": false,
+            "matched_fragments": 0,
+            "complete_selection": true,
+            "selected_fragments": 0,
+            "collection_completeness": "unknown"
+          }
+        ],
+        "text_partial": false,
+        "selected_source_count": 1,
+        "processed_source_count": 1,
+        "collection_completeness": "unknown"
+      },
+      "limitations": [
+        "Schema-pinned selections only; history/collection completeness is unknown.",
+        "Source IDs are checked; semantic support requires separate quality evaluation.",
+        "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
+        "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF."
+      ],
+      "generated_at": "2026-11-13T16:22:11.175383Z",
+      "data_as_of": "2026-11-13T16:22:11.168083Z",
+      "freshness": "current",
+      "persisted": true,
+      "usage": {
+        "model_calls": 1,
+        "input_token_reservation": 3873,
+        "output_token_reservation": 2000
+      },
+      "personalization": {
+        "memory": [],
+        "status": "disabled",
+        "revision": null,
+        "feedback_partial": false,
+        "feedback_records": 0,
+        "suppressed_recommendations": 0
+      }
+    },
+    "trigger": {
+      "profile_id": "3bb808c7-aeed-455f-9a7f-309194c5468e",
+      "config": {
+        "version": 1,
+        "enabled": true,
+        "on_change": true,
+        "interval_seconds": 3600,
+        "start_at": null,
+        "debounce_seconds": 1,
+        "max_wait_seconds": 10,
+        "query": "SQL",
+        "limit": 5
+      },
+      "enabled": true,
+      "revision": "f974e9e0-c201-4676-8235-cbafd0e9bfb8",
+      "next_due_at": "2026-11-13T17:22:11.210870Z",
+      "last_checked_at": "2026-11-13T16:22:11.210870Z",
+      "error_code": null
+    }
+  }
+]

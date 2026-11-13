@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PAIagent developer documentation</title><style>body{font:17px/1.6 system-ui;max-width:1050px;margin:2rem auto;padding:0 1rem}pre{overflow:auto;background:#f3f4f6;padding:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:.5rem}a{color:#125ac5}code{font-size:.9em}</style><nav><a href="index.html">Developer guide</a> · <a href="/schema">Interactive API</a> · <a href="openapi.json">OpenAPI download</a></nav><main><h1>PAIagent developer documentation</h1>
+<p>PAIagent is a backend API for bringing your application's records, events and supported files into a shared evidence layer, then running six bounded AI capabilities through versioned declarative profiles. API <code>/v1</code>, contract <strong>0.7.0</strong>. Send requests from a trusted backend with a service key and your authenticated user ID.</p>
+<p>Start here:</p>
+<ol>
+<li><a href="operations.html">Install, provision access and operate the service</a>.</li>
+<li><a href="quickstart.html">Complete the end-to-end quickstart</a>.</li>
+<li><a href="routes.html">Find an endpoint and its primary scope</a>, inspect <a href="openapi.json">OpenAPI</a>, then use the <a href="reference.html">integration reference</a> for full semantics and request examples.</li>
+<li><a href="client-behavior.html">Interpret results, errors, limits and lifecycle</a>.</li>
+<li><a href="response-examples.html">Inspect verified success/error responses and memory walkthrough</a>.</li>
+<li><a href="extensions.html">Add a domain or evolve an integration</a>.</li>
+</ol>
+<p>The <a href="reference.html">complete reference</a> covers registry and schema validation, snapshots/events, imports and reconciliation, erasure, files and CSV, context/search, all six capabilities, profiles, durable runs, triggers, managed memory, personalization and feedback. <a href="contract.json">Machine-readable contract</a> includes capability-specific payload schemas and examples; registered application payloads use the collection's immutable schema endpoint, because OpenAPI cannot enumerate schemas created by your backend at runtime.</p>
+<p>Example assets:</p>
+<ul>
+<li><a href="examples/domains/tasks.json">Tasks</a>, <a href="examples/domains/books.json">books</a>, and <a href="examples/domains/learning_sessions.json">learning sessions</a>: complete collection/schema/mapping/payload definitions using the same APIs.</li>
+<li><a href="examples/client.py">Standalone HTTP client</a> and <a href="examples/quickstart.py">runnable onboarding</a>.</li>
+<li><a href="examples/profiles/search.json">Search</a>, <a href="examples/profiles/query.json">query</a>, <a href="examples/profiles/summarize.json">summarize</a>, <a href="examples/profiles/extract.json">extract</a>, <a href="examples/profiles/analyze.json">analyze</a>, <a href="examples/profiles/recommend.json">recommend</a> profile templates. Replace collection UUIDs; templates target the tasks schema.</li>
+<li><a href="examples/memory/settings.json">Memory settings</a> and other files in <code>examples/memory/</code>: replace collection/result/item IDs before use. See the memory section of the reference for the required schemas, opt-in and grants.</li>
+</ul>
+<p>This directory is tracked independently of internal, ignored <code>docs/</code>. Include the whole directory with the source release; the API serves its static HTML and downloadable assets at <strong><code>/developer/</code></strong>, interactive docs at <strong><code>/schema</code></strong>, and live OpenAPI at <strong><code>/schema/openapi.json</code></strong>. Markdown links work in GitHub. A source checkout remains the installation unit; no separate published Python package or external documentation host is assumed.</p>
+<p>After changing handlers, contract, fixtures or Markdown, run:</p>
+<pre><code class="language-sh">.venv/bin/python -m app.integration.export_documentation
+.venv/bin/python -m app.integration.export_documentation --check
+</code></pre>
+<p>These commands need neither a database nor provider credentials. Exported OpenAPI, route index, fixture copies and HTML must ship together with the corresponding code. They contain no live customer data or secrets.</p>
+</main></html>

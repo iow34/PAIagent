@@ -1,0 +1,46 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Installation and operations</title><style>body{font:17px/1.6 system-ui;max-width:1050px;margin:2rem auto;padding:0 1rem}pre{overflow:auto;background:#f3f4f6;padding:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:.5rem}a{color:#125ac5}code{font-size:.9em}</style><nav><a href="index.html">Developer guide</a> · <a href="/schema">Interactive API</a> · <a href="openapi.json">OpenAPI download</a></nav><main><h1>Installation and operations</h1>
+<p>Run commands from the repository root. The verified development environment is Python 3.14.7, PostgreSQL 18.4 with pgvector 0.8.6. These are tested versions, not a claim that other versions are incompatible. Install Python, PostgreSQL and the pgvector server extension before proceeding. This repository does not provision a PostgreSQL server, TLS ingress or a production deployment.</p>
+<p>Create a database and an owner role using your PostgreSQL administrator connection (choose your own strong password):</p>
+<pre><code class="language-sql">CREATE ROLE paiagent LOGIN PASSWORD 'replace-password';
+CREATE DATABASE paiagent OWNER paiagent;
+</code></pre>
+<p>Install the <code>vector</code> extension into the new database using an administrator connection:</p>
+<pre><code class="language-sql">CREATE EXTENSION IF NOT EXISTS vector;
+</code></pre>
+<p>Then configure the application:</p>
+<pre><code class="language-sh">python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
+# Edit .env locally: DATABASE_URL and OPENAI_API_KEY are required.
+.venv/bin/alembic upgrade head
+.venv/bin/alembic current
+</code></pre>
+<p>Never overwrite an existing <code>.env</code>. Its DATABASE_URL must address the intended database, with credentials URL-encoded. The database role needs migration privileges on its application schema. The expected migration head for this release is <code>e1b7c5d9f263</code>. Back up existing data and rehearse migration on a restored copy before upgrading. Downgrade removes feature data; do not use it as an erasure recovery mechanism. <code>.env.example</code> lists optional timeout/retry overrides. The embedding model/dimension are fixed to <code>text-embedding-3-small</code>/1536; configure a generation model accessible to your provider account if the configured default is unavailable.</p>
+<p>Provision a fresh tenant and a development integration key:</p>
+<pre><code class="language-sh">TENANT_ID=$(.venv/bin/python -m app.cli.create_tenant --name local-integration)
+.venv/bin/python -m app.cli.create_api_key --tenant-id &quot;$TENANT_ID&quot; --name local-backend \
+  --scope catalog:read --scope sources:read --scope sources:write \
+  --scope collections:read --scope collections:write --scope schemas:read --scope schemas:write \
+  --scope data:validate --scope data:read --scope data:write --scope data:delete \
+  --scope profiles:read --scope profiles:write --scope ai:run \
+  --scope runs:read --scope runs:write --scope results:read \
+  --scope memory:read --scope memory:write --scope feedback:read --scope feedback:write
+</code></pre>
+<p>Each tenant command creates a new UUID; names are labels, not idempotency keys. Keep the UUID. The key command prints a secret once, storing only a hash. Transfer it to your backend secret store; do not paste it into source control or frontend code. This broad development grant supports the whole tutorial. For deployed integrations issue narrower keys, optionally <code>--source-id UUID</code> for each permitted existing source. All scopes are exact: <code>data:write</code> does not grant reads or deletes. Omitted scopes default to legacy access only. To use old document/conversation routes, explicitly grant <code>--scope 'legacy:*'</code>; it cannot be combined with source restrictions.</p>
+<p>Start the API and, in another terminal, the worker with the same configuration:</p>
+<pre><code class="language-sh">.venv/bin/uvicorn app.asgi:create_app --factory --host 127.0.0.1 --port 8000
+</code></pre>
+<pre><code class="language-sh">.venv/bin/python -m app.jobs.worker --concurrency 4 --poll-seconds 1
+</code></pre>
+<p>The worker includes the scheduler; no separate scheduler process, Redis or broker is required. <code>--once</code> drains work currently due and exits, so it is not a persistent scheduler. The API alone accepts background work but does not continuously process it. Serve <code>/developer/</code> and <code>/schema</code> from the API host; do not publish <code>.env</code>, ignored internal <code>docs/</code>, database dumps or private logs with documentation.</p>
+<h2>Recovery and diagnostics</h2>
+<p><code>GET /health</code> is a process liveness check. It is not a database, worker or provider readiness guarantee. Inspect migration head, worker process health, and authenticated run status separately. A stopped worker leaves runs pending. Restart workers against the same database; expired 90-second leases can be reclaimed, with bounded attempts and saved result deduplication. Do not manually duplicate runs to recover them: retain the original idempotency key and poll the returned run ID. A timeout in your client does not cancel a run; cancellation is an explicit API request.</p>
+<p>Use source/collection IDs, external/event IDs, envelope <code>metadata.correlation_id</code>, run ID, result ID and trigger revision as correlation handles. Run status exposes attempts, lease, timestamps and <code>error_code</code>; results expose <code>usage</code>, data coverage, limitations and freshness. Token counts and reserved budgets are available; monetary cost accounting is not implemented. See <a href="client-behavior.html">client behavior</a>. Inspect status through authorized requests, rather than logging request bodies. Configure your hosting logs to exclude Authorization, payloads, messages, file text, signed credentials and response content. No central tracing dashboard is bundled.</p>
+<p>A 403 indicates missing scope/source grants. A 404 may reflect isolation or erasure, not just a typo. A failed run with a provider error requires checking the configured model/access/limits; repeated submissions are not a fix. For invalid input inspect the 422 <code>extra.code</code> and issues. Preserve safe IDs when escalating, without private text or keys. TLS, process supervision, backups and production monitoring remain deployment responsibilities.</p>
+<h2>Verification</h2>
+<pre><code class="language-sh">.venv/bin/python -m app.integration.export_documentation --check
+.venv/bin/python -m unittest discover -s tests -p test_documentation.py
+.venv/bin/python tests/run_postgres_tests.py --all
+</code></pre>
+<p>The PostgreSQL runner creates and removes a temporary <code>_test</code> database cluster; it requires local PostgreSQL binaries and pgvector. It does not migrate the configured application database. Onboarding tests use real TCP HTTP and fake providers. They verify the integration protocol, not real model quality, throughput or production recovery guarantees. Test sources live in the local ignored <code>tests/</code> directory; include that suite separately if you want CI on another checkout. Documentation and executable client examples are tracked.</p>
+</main></html>

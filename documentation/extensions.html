@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Extending and upgrading an integration</title><style>body{font:17px/1.6 system-ui;max-width:1050px;margin:2rem auto;padding:0 1rem}pre{overflow:auto;background:#f3f4f6;padding:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:.5rem}a{color:#125ac5}code{font-size:.9em}</style><nav><a href="index.html">Developer guide</a> · <a href="/schema">Interactive API</a> · <a href="openapi.json">OpenAPI download</a></nav><main><h1>Extending and upgrading an integration</h1>
+<p>Most applications need configuration and a source-side adapter, without editing PAIagent server files. The three shipped domain examples deliberately use different field names and an event-only collection; all use the same registry, ingestion, profile and run routes.</p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Where it belongs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New task/book/sensor/study domain; rename fields; select evidence; set goals, periods, metrics or budgets</td>
+<td>Register collection schemas/mappings, then declare immutable profiles through HTTP.</td>
+</tr>
+<tr>
+<td>Your source timestamps, identifiers, CSV columns, units, outbox and user authentication</td>
+<td>Convert in your integrating backend. Preserve stable external/event IDs and explicit source versions.</td>
+</tr>
+<tr>
+<td>New binary format, parser, unsupported computation, new provider behavior or tool</td>
+<td>Implement and test a server adapter, then update catalogue/contract/docs. A profile is not executable Python or arbitrary graph code.</td>
+</tr>
+</tbody>
+</table>
+<h2>Add your own collection</h2>
+<p>Choose record snapshots for mutable state and independent events for observations. Declare a bounded <code>paiagent-1</code> schema with <code>additionalProperties:false</code>, string/array bounds, explicit nullability and version. Register semantic field roles using JSON Pointer scalar paths. <code>quantity</code> fields need explicit unit labels; convert units before delivery. <code>search_text</code> decides what text enters retrieval. Map <code>display_name</code>, category and event time where meaningful.</p>
+<p>Validate with <code>/collections/{id}/validate</code> before persisting. Send typed payloads and exact version in every envelope; maintain source-side versions and a durable delivery outbox. Declare reconciliation/import completeness honestly. An event's elapsed seconds and a record's current status express different facts; do not turn one into the other without a documented source transformation.</p>
+<p>Create a profile with the relevant collection ID, schema version, selected fields, kind/current/history mode, filters and evidence bounds. For learning sessions select event fields <code>/subject</code>, <code>/started</code>, <code>/elapsed</code>, <code>/reflection</code> with <code>kind:event</code> and <code>mode:history</code>; for books choose <code>/heading</code>, <code>/pages</code>, <code>/isbn</code> (arrays are not scalar analysis selections). Numeric metrics operate on registered quantity mappings; history represents versions/events, not automatically a state-duration calculation. Search needs a mapped search-text field; include supported indexed file text explicitly when desired.</p>
+<p>The tasks, books and learning-session fixtures are examples, never special server keywords. Do not add <code>if collection.name == &quot;books&quot;</code> to a controller to support a new domain. New configuration should be discoverable/readable through the registry and profile APIs and callable by an independent client.</p>
+<h2>Versioning and upgrades</h2>
+<p><code>/v1</code> is the API family; <code>contract_version</code> tracks this implemented release's capability contract. Application record/event schemas and profiles each have their own explicit integer versions. Unknown body fields, unsupported schema keywords, and unknown/repeated query parameters are rejected. Do not depend on silent ignoring, coercion, default injection or an implicit latest version.</p>
+<p>For a schema change: register a new immutable schema version, transform and send new object versions under it, then create a new profile version pinned to that schema. Existing deliveries/results retain their versions; changing configuration does not rewrite them. Read current memory-setting/preference versions before updates. Reconfigure a trigger explicitly when moving to another profile version; inspect the trigger revision and accepted run version. Old run idempotency keys must not be repurposed for a changed body.</p>
+<p>Before a server release, back up data, rehearse migrations and client tests against the new OpenAPI/contract, compare catalogue availability/limits, regenerate public assets and ship them with that same code. Use the live <code>/schema/openapi.json</code> and <code>/v1/integration-contract</code> to detect a mismatched installed release. An API path/version alone does not promise identical future capabilities or budgets. For an incompatible request/response change, introduce an explicit compatible migration path or a new API family; never silently reinterpret stored payloads.</p>
+<h2>Adding a server adapter</h2>
+<p>Keep parsing, SQL, authorization, storage, exact arithmetic and source isolation in ordinary services. The capability workflow is a fixed bounded graph, selected by the registered capability; it cannot execute user-authored code or unbounded tools. A new parser must preserve provenance/positions, bounds, timeout isolation, replay fingerprints and deletion behavior. A new computation needs typed inputs/outputs, units/null/period semantics and exactness tests where numeric correctness matters. A provider adapter must respect generation budgets, validate outputs and source references, and handle lifecycle revocation before saving results.</p>
+<p>Update the catalogue, semantic contract, fixture examples and exported documentation together. Verify isolation, limits, replay, migrations and erasure in a temporary database. Real model quality, semantic support, injection resistance and usefulness require separate evaluation; fake-provider integration checks establish protocol behavior only.</p>
+</main></html>

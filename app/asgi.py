@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from importlib.resources import files
 from typing import cast
 
 from litestar import Litestar
@@ -7,6 +8,7 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.openapi import OpenAPIConfig
 from litestar.openapi.spec import Components, SecurityScheme
+from litestar.static_files import create_static_files_router
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -164,6 +166,13 @@ def get_capability_generator(state: State) -> OpenAIGenerator:
 def create_app() -> Litestar:
     return Litestar(
         route_handlers=[
+            create_static_files_router(
+                path="/developer",
+                directories=[str(files("documentation"))],
+                html_mode=True,
+                resolve_symlinks=False,
+                name="developer-documentation",
+            ),
             HealthController,
             IntegrationController,
             DataController,
@@ -198,7 +207,15 @@ def create_app() -> Litestar:
         },
         openapi_config=OpenAPIConfig(
             title="PAIagent API",
+            create_examples=False,
             version="0.7.0",
+            description=(
+                "Developer onboarding: /developer/. Download this schema at "
+                "/schema/openapi.json. Registered payload schemas are available at "
+                "/v1/collections/{collection_id}/schemas/{kind}/{version}; "
+                "typed capability payloads and semantic limits: /v1/integration-contract. "
+                "Supply both bearer service key and X-User-ID from your trusted backend."
+            ),
             components=Components(
                 security_schemes={
                     "ServiceAPIKey": SecurityScheme(

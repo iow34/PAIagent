@@ -10,6 +10,7 @@ from litestar.di import NamedDependency, Provide
 from litestar.exceptions import ValidationException
 from litestar.middleware.rate_limit import RateLimitConfig
 from litestar.openapi.datastructures import ResponseSpec
+from litestar.openapi.spec import Example
 from litestar.params import JSONBody, Parameter
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -176,10 +177,29 @@ class IntegrationController(Controller):
         responses={
             422: ResponseSpec(
                 data_container=dict,
+                generate_examples=False,
+                examples=[
+                    Example(
+                        value={
+                            "status_code": 422,
+                            "detail": "Invalid input.",
+                            "extra": {"code": "invalid_contract", "issues": []},
+                        }
+                    )
+                ],
                 description="Unsupported schema, constraints or field mappings",
             ),
             409: ResponseSpec(
                 data_container=dict,
+                generate_examples=False,
+                examples=[
+                    Example(
+                        value={
+                            "status_code": 409,
+                            "detail": "Name or schema version already exists; versions are immutable.",
+                        }
+                    )
+                ],
                 description="Immutable schema version already exists",
             ),
         },
@@ -230,6 +250,16 @@ class IntegrationController(Controller):
         responses={
             422: ResponseSpec(
                 data_container=dict,
+                generate_examples=False,
+                examples=[
+                    Example(
+                        value={
+                            "status_code": 422,
+                            "detail": "Invalid input.",
+                            "extra": {"code": "invalid_contract", "issues": []},
+                        }
+                    )
+                ],
                 description="Envelope or registered schema constraint failed",
             )
         },

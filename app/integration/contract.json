@@ -5717,5 +5717,11 @@
       }
     ],
     "example_directory": "app/integration/memory_examples; replace placeholder memory/data collection UUIDs and read current settings/preference version before PUT."
+  },
+  "documentation": {
+    "guide": "/developer/",
+    "interactive": "/schema",
+    "openapi": "/schema/openapi.json",
+    "registered_payload_schema": "/v1/collections/{collection_id}/schemas/{kind}/{version}"
   }
 }

@@ -1,0 +1,7 @@
+{
+  "collection_id": "00000000-0000-4000-8000-000000000011",
+  "key": "response_format",
+  "value": "brief",
+  "expected_version": 0,
+  "restore": false
+}

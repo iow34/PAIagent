@@ -1,0 +1,25 @@
+{
+  "collection": {"name": "tasks", "description": "Work items from an external service"},
+  "schema": {
+    "kind": "record", "version": 1,
+    "json_schema": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "caption": {"type": "string", "maxLength": 300},
+        "phase": {"type": "string", "enum": ["todo", "done"], "maxLength": 20},
+        "estimate": {"type": ["number", "null"], "minimum": 0, "maximum": 1000},
+        "details": {"type": "object", "additionalProperties": false, "properties": {"note": {"type": "string", "maxLength": 2000}}}
+      },
+      "required": ["caption", "phase"]
+    },
+    "field_mappings": [
+      {"path": "/caption", "role": "display_name"},
+      {"path": "/caption", "role": "search_text"},
+      {"path": "/phase", "role": "category"},
+      {"path": "/estimate", "role": "quantity", "unit": "hour"},
+      {"path": "/details/note", "role": "search_text"}
+    ]
+  },
+  "operation": "snapshot",
+  "payload": {"caption": "Підготувати звіт", "phase": "todo", "estimate": null, "details": {"note": "За жовтень"}}
+}
