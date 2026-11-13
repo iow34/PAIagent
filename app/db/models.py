@@ -628,3 +628,72 @@ class FileProvenance(Base):
     coverage: Mapped[str] = mapped_column(String(16))
     total_parts: Mapped[int] = mapped_column()
     limitations: Mapped[list[str]] = mapped_column(JSONB)
+
+
+class AnalysisProfile(DataOwner, Base):
+    __tablename__ = "analysis_profiles"
+    __table_args__ = (
+        Index("ix_analysis_profiles_owner", "tenant_id", "user_id", "id"),
+        UniqueConstraint(
+            "tenant_id", "user_id", "id", name="uq_analysis_profile_owner_id"
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AnalysisProfileVersion(Base):
+    __tablename__ = "analysis_profile_versions"
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="ck_analysis_profile_version"),
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_profiles.id", ondelete="CASCADE"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(primary_key=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AnalysisResult(DataOwner, Base):
+    __tablename__ = "analysis_results"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id", "profile_id"],
+            [
+                "analysis_profiles.tenant_id",
+                "analysis_profiles.user_id",
+                "analysis_profiles.id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["profile_id", "profile_version"],
+            [
+                "analysis_profile_versions.profile_id",
+                "analysis_profile_versions.version",
+            ],
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_analysis_results_owner",
+            "tenant_id",
+            "user_id",
+            "profile_id",
+            "created_at",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    profile_id: Mapped[uuid.UUID] = mapped_column()
+    profile_version: Mapped[int] = mapped_column()
+    # Conservative collection dependencies include empty selections (absence is evidence).
+    collection_ids: Mapped[list[str]] = mapped_column(JSONB)
+    envelope: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    snapshot: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

@@ -19,6 +19,9 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.db.models import (
+    AnalysisProfile,
+    AnalysisProfileVersion,
+    AnalysisResult,
     ConversationSession,
     DataDelivery,
     DataFence,
@@ -854,6 +857,25 @@ class DataService(IntegrationService):
             pending.update(neighbors - chain)
             chain.update(neighbors)
         delivery_ids = list(chain)
+        # Any erased member invalidates the entire derived collection result,
+        # including conclusions based on absence, counts and sampled evidence.
+        impacted_collections = set()
+        for offset in range(0, len(delivery_ids), 1000):
+            impacted_collections.update(
+                await repo.session.scalars(
+                    select(DataDelivery.collection_id).where(
+                        *owner(DataDelivery, self.context),
+                        DataDelivery.id.in_(delivery_ids[offset : offset + 1000]),
+                    )
+                )
+            )
+        for collection_id in impacted_collections:
+            await repo.session.execute(
+                delete(AnalysisResult).where(
+                    *owner(AnalysisResult, self.context),
+                    AnalysisResult.collection_ids.contains([str(collection_id)]),
+                )
+            )
         # Keep PostgreSQL bind counts bounded for accumulated user histories.
         for offset in range(0, len(delivery_ids), 1000):
             batch_ids = delivery_ids[offset : offset + 1000]
@@ -1041,6 +1063,48 @@ class DataService(IntegrationService):
             await self._erase_deliveries(repo, delivery_ids)
             await repo.session.execute(delete(DataImport).where(*filters(DataImport)))
             await repo.session.execute(delete(DataOutbox).where(*filters(DataOutbox)))
+            # Scope erasure also removes private profile goals/configurations.
+            profile_stmt = (
+                select(AnalysisProfileVersion.profile_id)
+                .join(
+                    AnalysisProfile,
+                    AnalysisProfile.id == AnalysisProfileVersion.profile_id,
+                )
+                .where(*owner(AnalysisProfile, self.context))
+            )
+            if scope != "user":
+                collection_ids = (
+                    [collection_id]
+                    if collection_id
+                    else list(
+                        await repo.session.scalars(
+                            select(IntegrationCollection.id).where(
+                                IntegrationCollection.source_id == source_id,
+                                IntegrationCollection.tenant_id
+                                == self.context.tenant_id,
+                            )
+                        )
+                    )
+                )
+                for cid in collection_ids:
+                    await repo.session.execute(
+                        delete(AnalysisResult).where(
+                            *owner(AnalysisResult, self.context),
+                            AnalysisResult.collection_ids.contains([str(cid)]),
+                        )
+                    )
+                    affected = profile_stmt.where(
+                        AnalysisProfileVersion.config["selections"].contains(
+                            [{"collection_id": str(cid)}]
+                        )
+                    )
+                    await repo.session.execute(
+                        delete(AnalysisProfile).where(AnalysisProfile.id.in_(affected))
+                    )
+            else:
+                await repo.session.execute(
+                    delete(AnalysisProfile).where(*owner(AnalysisProfile, self.context))
+                )
             if scope == "user":
                 # Legacy documents are not source-addressable. FK cascades remove
                 # chunks, vectors, knowledge and conversation messages.

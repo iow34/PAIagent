@@ -10,6 +10,7 @@ from litestar.openapi.spec import Components, SecurityScheme
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.controllers.capabilities import CapabilityController
 from app.api.controllers.data import DataController
 from app.api.controllers.documents import DocumentController
 from app.api.controllers.evidence import EvidenceController
@@ -18,6 +19,7 @@ from app.api.controllers.integration import IntegrationController
 from app.api.controllers.knowledge import KnowledgeController
 from app.api.controllers.query import QueryController
 from app.api.controllers.search import SearchController
+from app.capabilities.generation import OpenAIGenerator
 from app.config.settings import get_settings
 from app.db.models import EMBEDDING_DIM
 from app.db.postgres import DatabaseResources, open_database
@@ -64,7 +66,13 @@ async def openai_lifespan(
         max_retries=settings.openai_max_retries,
     ) as client:
         app.state.openai_client = client
+        app.state.capability_generator = OpenAIGenerator(
+            client, settings.generation_model
+        )
         app.state.embedding_service = EmbeddingService(client, settings)
+        app.state.capability_embeddings = EmbeddingService(
+            client.with_options(max_retries=0), settings
+        )
         app.state.generation_service = GenerationService(
             client,
             model=settings.generation_model,
@@ -143,6 +151,14 @@ def get_query_service(state: State) -> QueryService:
     return cast(QueryService, state.query_service)
 
 
+def get_capability_embeddings(state: State) -> EmbeddingService:
+    return cast(EmbeddingService, state.capability_embeddings)
+
+
+def get_capability_generator(state: State) -> OpenAIGenerator:
+    return cast(OpenAIGenerator, state.capability_generator)
+
+
 def create_app() -> Litestar:
     return Litestar(
         route_handlers=[
@@ -150,6 +166,7 @@ def create_app() -> Litestar:
             IntegrationController,
             DataController,
             EvidenceController,
+            CapabilityController,
             DocumentController,
             SearchController,
             QueryController,
@@ -162,6 +179,12 @@ def create_app() -> Litestar:
             knowledge_lifespan,
         ],
         dependencies={
+            "capability_embeddings": Provide(
+                get_capability_embeddings, sync_to_thread=False
+            ),
+            "capability_generator": Provide(
+                get_capability_generator, sync_to_thread=False
+            ),
             "settings": Provide(get_settings, sync_to_thread=False),
             "db_session_factory": Provide(get_db_session_factory),
             "openai_client": Provide(get_openai_client, sync_to_thread=False),
@@ -171,7 +194,7 @@ def create_app() -> Litestar:
         },
         openapi_config=OpenAPIConfig(
             title="PAIagent API",
-            version="0.4.0",
+            version="0.5.0",
             components=Components(
                 security_schemes={
                     "ServiceAPIKey": SecurityScheme(

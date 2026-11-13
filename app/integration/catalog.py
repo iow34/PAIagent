@@ -19,8 +19,8 @@ REQUESTS_PER_MINUTE = 120
 def catalog(context: AccessContext) -> dict[str, Any]:
     return {
         "api_version": "1",
-        "contract_version": "0.4.0",
-        "completed_step": 8,
+        "contract_version": "0.5.0",
+        "completed_step": 9,
         "registry": {
             "sources": True,
             "collections": True,
@@ -34,10 +34,12 @@ def catalog(context: AccessContext) -> dict[str, Any]:
             "privacy_erasure": True,
             "transactional_outbox": True,
             "background_execution": False,
+            "analysis_profiles": True,
+            "successful_analysis_results": True,
         },
         "capabilities": [
             {
-                "name": "search",
+                "name": "legacy_search",
                 "available": True,
                 "path": "/v1/search",
                 "input": "indexed_documents",
@@ -61,8 +63,23 @@ def catalog(context: AccessContext) -> dict[str, Any]:
                 "scope": "legacy:*",
             },
             *[
-                {"name": name, "available": False, "planned_step": 9}
-                for name in ["summarize", "extract", "analyze", "recommend"]
+                {
+                    "name": name,
+                    "available": True,
+                    "path": "/v1/profiles/{profile_id}/runs",
+                    "input": "RunInput + immutable ProfileInput version",
+                    "result": "CapabilityResult",
+                    "scope": "ai:run; data:read for collections",
+                    "execution": "bounded synchronous; collected results persisted; inline ephemeral",
+                }
+                for name in [
+                    "search",
+                    "query",
+                    "summarize",
+                    "extract",
+                    "analyze",
+                    "recommend",
+                ]
             ],
         ],
         "formats": {
@@ -88,7 +105,7 @@ def catalog(context: AccessContext) -> dict[str, Any]:
                 "category",
                 "external_reference",
             ],
-            "profiles_available": False,
+            "profiles_available": True,
         },
         "limits": {
             "registry_request_bytes": REQUEST_BYTES,

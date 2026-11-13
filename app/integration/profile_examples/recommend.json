@@ -1,0 +1,39 @@
+{
+  "name": "example-recommend",
+  "capability": "recommend",
+  "goal": "Use the supplied evidence for recommend",
+  "selections": [
+    {
+      "collection_id": "00000000-0000-4000-8000-000000000001",
+      "schema_version": 1,
+      "fields": [
+        "/caption",
+        "/phase",
+        "/estimate"
+      ],
+      "kind": "record",
+      "mode": "current",
+      "filters": [],
+      "time_field": "occurred_at",
+      "include_text": false
+    }
+  ],
+  "period": null,
+  "comparison_period": null,
+  "timezone": "UTC",
+  "constraints": [],
+  "language": "uk",
+  "output_schema": null,
+  "metrics": [],
+  "minimum_samples": 1,
+  "budget": {
+    "max_records": 1000,
+    "max_fragments": 1000,
+    "context_chars": 24000,
+    "model_calls": 16,
+    "input_tokens": 64000,
+    "output_tokens": 16000,
+    "per_call_output_tokens": 2000,
+    "seconds": 50
+  }
+}

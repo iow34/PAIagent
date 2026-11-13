@@ -20,6 +20,10 @@ SCOPES = frozenset(
         "data:read",
         "data:write",
         "data:delete",
+        "profiles:read",
+        "profiles:write",
+        "ai:run",
+        "results:read",
     }
 )
 

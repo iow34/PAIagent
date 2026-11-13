@@ -1,6 +1,6 @@
-# PAIagent integration contract — steps 6–8
+# PAIagent integration contract — steps 6–9
 
-Contract version **0.4.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; execution of analysis profiles comes later.
+Contract version **0.5.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; six AI capabilities now execute through immutable declarative profiles with bounded synchronous runs and saved collected-data results.
 
 ## Install and run
 
@@ -18,7 +18,7 @@ Migration `a7d9e3f1b820` adds the seven `data_*` tables and a registry associati
 
 The schema registry and data lifecycle need PostgreSQL but do not make model calls. The existing application lifespan still expects the OpenAI configuration used by the document features.
 
-Live documentation: `/schema`. Machine-readable OpenAPI: `/schema/openapi.json`. The served OpenAPI describes implemented routes only. `GET /v1/capabilities` reports implemented capabilities, formats, limits and caller grants. `GET /v1/integration-contract` serves the bundled `app/integration/contract.json`, including implemented record/event/import routes and explicitly **planned** files, profiles, runs and results. Planned routes are not executable and are absent from live OpenAPI.
+Live documentation: `/schema`. Machine-readable OpenAPI: `/schema/openapi.json`. The served OpenAPI describes implemented routes only. `GET /v1/capabilities` reports implemented capabilities, formats, limits and caller grants. `GET /v1/integration-contract` serves the bundled `app/integration/contract.json`, including implemented data/normalization/profile/result routes and explicitly **planned** durable jobs/triggers. Planned routes are not executable and are absent from live OpenAPI.
 
 ## Authentication and ownership
 
@@ -46,9 +46,9 @@ Administrative issuance for an existing tenant:
   --scope data:validate --scope data:read --scope data:write --scope data:delete
 ```
 
-The command prints the secret once; only its SHA-256 hash is stored. Existing tenant provisioning is unchanged. Each `--scope` is an exact grant, with no implicit inheritance. To retain document functionality, explicitly add `--scope 'legacy:*'`. Omitting all `--scope` flags keeps the old CLI behavior (`legacy:*`, `catalog:read`). Unknown scopes are rejected; future profile/run/result scopes are not issuable yet. `data:write` does not imply `data:read` or `data:delete`; delete envelopes additionally require `data:delete`.
+The command prints the secret once; only its SHA-256 hash is stored. Existing tenant provisioning is unchanged. Each `--scope` is an exact grant, with no implicit inheritance. To retain document functionality, explicitly add `--scope 'legacy:*'`. Omitting all `--scope` flags keeps the old CLI behavior (`legacy:*`, `catalog:read`). Unknown scopes are rejected; `profiles:read`, `profiles:write`, `ai:run`, `results:read` are also issuable; add these explicitly for step 9. `data:write` does not imply `data:read` or `data:delete`; delete envelopes additionally require `data:delete`.
 
-After creating a source, issue a narrower integration key by repeating `--source-id "$SOURCE_ID"`. Each ID must belong to the selected tenant. Omission means all tenant sources, including future ones. A source-restricted key cannot create sources or use legacy document routes, which have no source association. Listing sources returns only allowed sources. A matching scope is still required for each operation. Schemas and profiles cannot extend grants; profile execution is a later step.
+After creating a source, issue a narrower integration key by repeating `--source-id "$SOURCE_ID"`. Each ID must belong to the selected tenant. Omission means all tenant sources, including future ones. A source-restricted key cannot create sources or use legacy document routes, which have no source association. Listing sources returns only allowed sources. A matching scope is still required for each operation. Schemas and profiles cannot extend grants. Profiles/results are private to tenant + user; every read/run also rechecks collection source grants.
 
 ## Implemented routes
 
@@ -383,3 +383,94 @@ Context pages and search results carry explicit sampling limitations. UUID pages
 General evidence search is separate from legacy `/v1/search` and `/v1/query`, which keep their contracts and document pipeline. The common evidence endpoints are the shared context interface for later capabilities. Search applies owner/collection restrictions before ranking, validates the source grant, combines pgvector cosine rank and PostgreSQL `simple` full-text rank, and returns source identifiers and exact versions. It does not use unselected JSON fields as embedding/search text. Unindexed evidence participates only in full-text ranking. New versions immediately hide old fragments from current context/search/evidence retrieval; erasure deletes fragments/vectors/file provenance with the original private content. An indexing result is discarded if its evidence changed or was erased while the provider ran. Stored historical source payloads retain their original schema versions.
 
 The step-8 test suite uses deterministic embeddings and generated PDF/EPUB fixtures. It does not call paid models or establish real embedding quality. The existing legacy TXT/Markdown regression suite remains part of acceptance. New formats can be added as bounded adapters returning extraction units with honest positions/coverage, while integrators can convert unsupported formats to normalized JSON or text themselves.
+
+## Step 9 — AI capabilities and declarative profiles (contract 0.5.0)
+
+Migration `c9f5a3b7d041` follows `b8e4f2a6c930` and adds `analysis_profiles`, immutable `analysis_profile_versions`, and `analysis_results`. Existing data is preserved. Apply with `.venv/bin/alembic upgrade head` before serving this version. Downgrading removes profiles/results. Keys receive no implicit new permissions. Add `profiles:read`, `profiles:write`, `ai:run`, `results:read` explicitly; collection execution and result reads additionally require `data:read`. The service still needs `OPENAI_API_KEY` for generation/embedding operations; this is separate from its inbound service API key.
+
+Profiles belong to **tenant + X-User-ID**, including their goals and settings. A profile can never select another owner's data or extend the key's source grant. Registered schemas remain tenant-shared metadata. The static `/v1/integration-contract` includes JSON Schemas for ProfileInput, RunInput, profile pages and result envelopes; OpenAPI exposes these types too.
+
+| Method and route | Behavior |
+| --- | --- |
+| `POST /v1/profiles` | Create version 1 from ProfileInput; 201. |
+| `GET /v1/profiles?limit=50&cursor=...` | Page of latest authorized versions, ordered by profile UUID. |
+| `GET /v1/profiles/{id}` | Latest profile metadata; does not run it. |
+| `GET /v1/profiles/{id}/versions/{version}` | Specific immutable version. |
+| `POST /v1/profiles/{id}/versions/{version}` | New full ProfileInput, version must be previous maximum + 1; concurrent duplicates conflict. |
+| `DELETE /v1/profiles/{id}` | 200; delete all versions and saved results. |
+| `POST /v1/profiles/{id}/runs` | RunInput with **explicit version**; 200 CapabilityResult. Finite synchronous execution. |
+| `GET /v1/profiles/{id}/results?limit=50&cursor=...` | Page of small result summaries (IDs, version, state, generated_at, freshness); fetch payload by ID. |
+| `GET /v1/results/{id}` | Saved envelope with freshly checked current/stale status. Never generates. Inline IDs are not persisted and return 404. |
+
+Page size is 1..100; cursors are exclusive UUIDs, not chronological offsets or snapshots. Authorization can leave a short/empty page with a next cursor. A successful HTTP request commits its writes. This step does not provide asynchronous jobs, schedules, triggers, idempotent run replay or a durable `GET /runs/{id}`. A timeout or transport failure should be handled by the client; an ambiguous HTTP response can occur after commit, so inspect saved result summaries before retrying an expensive request.
+
+### Profile and run example
+
+The following uses the existing task example schema; replace `$COLLECTION_ID` with your own registered collection ID. The same declarations work with other scalar field names and registered quantity/category roles. No entity-specific controller or graph node is needed. Six complete profile examples are bundled in `app/integration/profile_examples/`; their placeholder collection UUID must be replaced.
+
+```sh
+curl -sS "$BASE_URL/v1/profiles" \
+  -H "Authorization: Bearer $PAIAGENT_API_KEY" -H "X-User-ID: $USER_ID" \
+  -H 'Content-Type: application/json' -d "{
+    \"name\":\"workload\",\"capability\":\"analyze\",
+    \"goal\":\"Describe the supplied workload and its limitations\",
+    \"language\":\"uk\",\"timezone\":\"Europe/Warsaw\",
+    \"selections\":[{\"collection_id\":\"$COLLECTION_ID\",\"schema_version\":1,
+      \"fields\":[\"/caption\",\"/phase\",\"/estimate\"],\"kind\":\"record\",\"mode\":\"current\"}],
+    \"metrics\":[{\"name\":\"records\",\"selection\":0,\"operation\":\"count\"},
+      {\"name\":\"estimate_by_phase\",\"selection\":0,\"operation\":\"average\",
+       \"field\":\"/estimate\",\"group_by\":\"/phase\"}],
+    \"minimum_samples\":1}"
+
+# Use profile_id from the response. Run version 1, not an implicit latest.
+curl -sS "$BASE_URL/v1/profiles/$PROFILE_ID/runs" \
+  -H "Authorization: Bearer $PAIAGENT_API_KEY" -H "X-User-ID: $USER_ID" \
+  -H 'Content-Type: application/json' -d '{"version":1}'
+```
+
+ProfileInput supports `name`, `capability`, `goal`, `selections`, `period`, `comparison_period`, `timezone`, `constraints`, `language`, `output_schema`, `metrics`, `minimum_samples`, `budget`. Unknown keys, tools, SQL, formulas and executable graphs are rejected. Goals/constraints/schema annotations are data under system rules; user text is never allowed to change access or limits.
+
+Selections pin `collection_id`, `kind=record|event`, `schema_version`, and 1..30 scalar JSON Pointer `fields` through objects (arrays/whole objects are not selected). `mode=current` chooses the current record version; `history` chooses non-erased snapshots/upserts, or independent observations when `kind=event`. Events require `mode=history`; corrected observations are excluded. Snapshots describe state and must not be counted as user actions. Schema versions are never coerced or combined implicitly. Future payload versions require a new profile version or explicit compatible input. `include_text=true` explicitly adds attached file contents; otherwise only selected scalar values are visible. It does not expose unselected JSON search-text fields. Registering a schema alone does not ingest or normalize its data.
+
+`filters` is an AND of `{field,op,value}` declarations. Every filter/time/metric path must also be in `fields`. `eq`, `ne`, `in` take typed non-null values satisfying the pinned schema; `in` has 1..100 entries. `gt/gte/lt/lte` support numeric fields only. `is_null` matches both missing and JSON null; `not_null` excludes both; these operators take no value. All other operators exclude null/missing. There is no implicit text/number/date conversion.
+
+`period` and optional non-overlapping `comparison_period` are `{start,end}` with explicit offsets, interpreted as **[start, end)**. Comparison requires metrics and a primary period. A selection's `time_field` defaults to delivery metadata `occurred_at`; alternatively select a schema field with `format=date-time`. Missing/null time is excluded by a period. Without a period it remains available and uses `missing_time` for interval grouping. The IANA `timezone` changes day/week/month calendar buckets, including daylight-saving transitions; it never assigns an offset to naive timestamps. Week starts Monday; bucket values are local start dates.
+
+### Inputs and typed payloads
+
+Every run returns the shared CapabilityResult envelope. `execution_status=succeeded` describes execution, separately from `data_state=sufficient|partial|insufficient_data`. It includes `run_id`, `result_id`, capability, immutable profile version, typed payload, authorized `sources` with delivery/object/schema versions and evidence positions, periods/timezone, coverage, limitations, generated/data-as-of timestamps, freshness and budget reservations. `sufficient` means enough selected evidence for this operation, not complete external history or verified truth.
+
+| Capability | RunInput and payload |
+| --- | --- |
+| `search` | Non-blank `query`, `limit=1..20` (default 5). Payload `{items: Source[]}`; no generation. Ranks only the bounded authorized selection: lexical matching on projected scalar fields; explicitly included indexed file fragments also use cosine similarity, fused with RRF k=60. No automatic indexing. Always partial or insufficient. |
+| `query` | Non-blank `query`; optional explicit `history=[{role:user|assistant,content}]`, at most 10 messages × 2000 chars. Payload `{claims:[{text,source_ids}],limitations}`. History is context only, never evidence; it is not saved as a conversation or memory. Uses the same retrieval/partial coverage as search. |
+| `summarize` | Payload `{claims:[{text,source_ids}],limitations}`. Processes all selected source batches, summarizes each and recursively reduces them within the budget. All processed source IDs/positions remain in the envelope; final claim references must trace to supplied evidence. Multiple selected documents retain distinct source identities. |
+| `extract` | Requires `output_schema` using the bounded registered-schema subset; objects require all properties in `required` and `additionalProperties:false`. Use nullable fields for unknown values; enum fields implement classification. Payload `{data,source_ids,claims,limitations}`; `data=null` on insufficient evidence. No arbitrary code or schema references. |
+| `analyze` | Payload `{metrics,claims,limitations}`; metrics come exclusively from server operations below. Claims provide qualitative comparisons/observations. |
+| `recommend` | Payload `{claims,limitations}`; claims describe evidence-grounded advisory proposals for the declared goal. No command execution. Managed memory/personalization is reserved for step 11. |
+
+For long extract/analyze/recommend inputs, qualitative generation uses the first bounded text batch and reports partial; exact analyze metrics still use all matching selected rows or fail explicitly. Search/query operate on a bounded candidate sample, not a full-corpus search guarantee. Summarize covers its selected batches, not necessarily every original/source-side object. Coverage distinguishes matched/selected rows and fragments, processed text, pinned schema, and unknown collection/history completeness. Large inputs beyond the selection/source or generation budget must be narrowed or explicitly given a larger supported budget.
+
+For an ephemeral run, create a profile with `selections:[]`, then submit `{"version":1,"inline":[{"label":"note","text":"..."}]}`. Up to 10 explicit text inputs and 500000 total characters are accepted. Do not mix inline inputs with collection selections. Inline periods and exact metrics are unsupported; use schema-validated collection data for them. Input text/history and resulting output are not written to the application DB, added to managed memory, or logged by this workflow; they remain in request memory until it finishes. The profile itself is persisted, so do not put ephemeral source text into its goal/constraints. Provider requests set `store=false`; provider operational retention follows its own account/policy terms.
+
+### Exact numeric operations
+
+Only `analyze` accepts `metrics`, at most 20. A metric names one selection index and `operation=count|sum|average|min|max`. `count` counts received selected rows and prohibits `field`; numeric operations require a selected, schema-registered `quantity` with an explicit unit. `group_by` requires a selected registered `category`. Optional `interval=day|week|month` uses the selection time field. At most 100 group/bucket combinations per metric/period. No formula inference or unit conversion is performed.
+
+Missing/null quantity values are skipped. Empty or all-null numeric aggregates are `null`; an ungrouped empty count is `"0"`. Group keys preserve scalar types; missing/null categories share a null group. Metrics return `sample_count`, `value_count`, `null_count`, and the non-null `denominator` for average, with supporting delivery IDs. Numeric values are decimal strings to avoid client JSON float loss. Arithmetic uses decimal precision 650 and ROUND_HALF_EVEN, enough for supported finite input magnitudes 1e-324..1e308 and bounded sums; repeating averages are rounded. Larger numeric magnitudes fail explicitly. `count` unit is `1`; other units are copied from the registered quantity.
+
+Two periods return primary/comparison aggregates plus primary-minus-comparison differences. Groups and calendar buckets align by their exact values; absent groups/buckets produce `null`, not assumed zero. Calendar buckets use absolute local dates rather than relative day numbers across periods. Per-period bucket series can therefore be compared by the client using its own declared alignment. Exact input exceeding `max_records` returns `422 exact_input_limit`; no sampled metric is labeled complete. Model-generated prose cannot overwrite the numeric metric payload.
+
+### Budgets, failure and lifecycle
+
+Defaults / hard maxima: records 1000/5000, file/inline fragments 1000/1000, source characters per call 24000/30000, model calls 16/32, input token reservation 64000/256000, total output reservation 16000/32000, per-call output 2000/4000, provider-phase seconds 50/50. Source JSON is limited to 4 MiB; result envelope to 8 MiB. Limits also have positive lower bounds in the schema. Input reservation conservatively charges UTF-8 bytes plus framing including system/schema; output reserves the complete per-call maximum, not just observed text. These are safe local reservations, not provider billing reports. Capability generation/embedding SDK clients disable retries; retrieval embedding counts as a model call. Existing legacy clients keep their existing retry policy.
+
+If any selected dataset/period fails to meet `minimum_samples` (default 1), no generation occurs and the data state is insufficient; exact metrics can still be returned. Inline minimum counts inputs, not fragments. `422 generation_budget` signals exhausted call/token budget; `422 metric_group_limit` means too many groups; `422 size_limit` means source/result JSON too large; `504 capability_timeout` is the deadline; `502 invalid_generation` covers refusal, incomplete/invalid output, provider errors or unverified/duplicate evidence IDs. Existing successful results remain saved. A successful insufficient-data result is a separate record; no prior result is overwritten.
+
+The provider adapter uses strict Responses JSON Schema and validates output again locally, including every claim's source IDs. A source ID check proves membership/authorization, not that the statement is supported. Semantic accuracy, recommendation usefulness, causality and prompt-injection resistance still require real-model evaluation; no numeric confidence is invented. [Official structured-output contract](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+Collected runs capture the collection mutation signature under the same owner lock used by ingestion/erasure. Provider calls occur outside the transaction. The signature, profile and erasure fences are rechecked under that lock before saving; concurrent input changes return `409 input_changed`. Results are append-only successes; GET refreshes `freshness=current|stale` without model calls. Changes anywhere in a selected collection conservatively mark a result stale, even outside its filters. Profile version stays fixed during execution; creating a later version does not mutate older versions/results.
+
+Erasing any dependent object/observation physically removes results for its affected collections, including results based on absence/counts and corrected observation chains. Scope erasure also deletes profiles referencing that scope; user erasure removes all private profiles/results, including inline-only profile settings. In-flight work cannot save behind an erasure fence or recreate an erased result. Profile deletion cascades its versions/results. Collected successes persist until explicit deletion; no automatic expiry is configured in this step. Backups/source queues/provider operational storage remain outside live application erasure.
+
+Local resume/checkpoints: `docs/STEP9_PROGRESS.md`. Verification command: `PYTHONWARNINGS=ignore .venv/bin/python tests/run_postgres_tests.py --all`. Tests use temporary PostgreSQL/pgvector and fake providers or local MockTransport, never paid model calls. Those checks establish API/computation/lifecycle behavior, not real model quality. `docs/` and `tests/` remain ignored under the existing repository policy.

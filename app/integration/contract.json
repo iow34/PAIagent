@@ -1,7 +1,7 @@
 {
   "api_version": "1",
-  "contract_version": "0.4.0",
-  "status": "Steps 6–8 implemented: bounded format normalization and current owner/collection evidence with hybrid search. AI profiles and jobs remain planned.",
+  "contract_version": "0.5.0",
+  "status": "Steps 6–9 implemented: registry, data lifecycle, format normalization, six bounded synchronous capabilities and immutable analysis profiles. Durable jobs/triggers remain step 10.",
   "ownership": {
     "tenant": "Derived exclusively from the API key.",
     "registry": "Tenant-shared metadata guarded by operation and source grants.",
@@ -203,35 +203,6 @@
   "planned_routes": [
     {
       "method": "POST",
-      "path": "/v1/profiles",
-      "step": 9,
-      "scope": "profiles:write",
-      "request": {
-        "name": "slug",
-        "version": "positive integer",
-        "capability": "supported catalog name",
-        "goal": "bounded text",
-        "selection": {
-          "collection_ids": "UUID[]",
-          "schema_versions": "explicit versions",
-          "period": "UTC interval"
-        },
-        "metrics": "allowlisted definitions",
-        "output_schema": "supported JSON Schema",
-        "memory_enabled": false
-      },
-      "response": "201 immutable profile version; source grants intersect at execution"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/profiles",
-      "step": 9,
-      "scope": "profiles:read",
-      "request": "cursor, limit",
-      "response": "Authorized profile version page"
-    },
-    {
-      "method": "POST",
       "path": "/v1/runs",
       "step": 10,
       "scope": "runs:write",
@@ -258,28 +229,9 @@
         "started_at": "UTC or null",
         "finished_at": "UTC or null"
       }
-    },
-    {
-      "method": "GET",
-      "path": "/v1/results/{result_id}",
-      "step": 10,
-      "scope": "results:read",
-      "response": {
-        "id": "UUID",
-        "capability": "catalog name",
-        "profile_version": "positive integer",
-        "payload": "capability-specific validated JSON",
-        "evidence": "authorized record/event/chunk references + versions",
-        "period": "UTC interval",
-        "coverage": "complete|partial|unknown with gaps",
-        "freshness": "data cutoff + stale status",
-        "limitations": "string[]",
-        "status": "completed|insufficient_information",
-        "usage": "tokens, model, duration"
-      }
     }
   ],
-  "future_scopes": "data:read, data:write, data:delete are now issuable. Profile/run/result scopes remain planned.",
+  "future_scopes": "profiles:read, profiles:write, ai:run and results:read are issuable. Collected runs/results additionally require data:read. Durable job scopes remain planned.",
   "examples": [
     "app/integration/examples/tasks.json",
     "app/integration/examples/books.json",
@@ -1087,5 +1039,2345 @@
     "parser_seconds": 10,
     "parser_cpu_seconds": 8,
     "parser_memory_bytes": 805306368
-  }
+  },
+  "capability_contract": {
+    "profile_input_json_schema": {
+      "$ref": "#/$defs/ProfileInput",
+      "$defs": {
+        "ProfileInput": {
+          "title": "ProfileInput",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "capability": {
+              "enum": [
+                "analyze",
+                "extract",
+                "query",
+                "recommend",
+                "search",
+                "summarize"
+              ]
+            },
+            "goal": {
+              "type": "string",
+              "maxLength": 2000,
+              "minLength": 1
+            },
+            "selections": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Selection"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ],
+              "default": null
+            },
+            "comparison_period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ],
+              "default": null
+            },
+            "timezone": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1,
+              "default": "UTC"
+            },
+            "constraints": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 50,
+              "minLength": 1,
+              "default": "uk"
+            },
+            "output_schema": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Metric"
+              },
+              "maxItems": 20,
+              "default": []
+            },
+            "minimum_samples": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 1
+            },
+            "budget": {
+              "$ref": "#/$defs/Budget"
+            }
+          },
+          "required": [
+            "name",
+            "capability",
+            "goal"
+          ],
+          "additionalProperties": false
+        },
+        "Selection": {
+          "title": "Selection",
+          "type": "object",
+          "properties": {
+            "collection_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "schema_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 2
+              },
+              "maxItems": 30,
+              "minItems": 1
+            },
+            "kind": {
+              "enum": [
+                "event",
+                "record"
+              ],
+              "default": "record"
+            },
+            "mode": {
+              "enum": [
+                "current",
+                "history"
+              ],
+              "default": "current"
+            },
+            "filters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Filter"
+              },
+              "maxItems": 20,
+              "default": []
+            },
+            "time_field": {
+              "type": "string",
+              "default": "occurred_at"
+            },
+            "include_text": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "collection_id",
+            "schema_version",
+            "fields"
+          ],
+          "additionalProperties": false
+        },
+        "Filter": {
+          "title": "Filter",
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "maxLength": 300,
+              "minLength": 2
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "gt",
+                "gte",
+                "in",
+                "is_null",
+                "lt",
+                "lte",
+                "ne",
+                "not_null"
+              ]
+            },
+            "value": {
+              "default": null
+            }
+          },
+          "required": [
+            "field",
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        "Period": {
+          "title": "Period",
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "Metric": {
+          "title": "Metric",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "selection": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "operation": {
+              "enum": [
+                "average",
+                "count",
+                "max",
+                "min",
+                "sum"
+              ]
+            },
+            "field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "group_by": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "interval": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "day",
+                    "month",
+                    "week"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "name",
+            "selection",
+            "operation"
+          ],
+          "additionalProperties": false
+        },
+        "Budget": {
+          "title": "Budget",
+          "type": "object",
+          "properties": {
+            "max_records": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 1000
+            },
+            "max_fragments": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            },
+            "context_chars": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 30000,
+              "default": 24000
+            },
+            "model_calls": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 16
+            },
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 256000,
+              "default": 64000
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 32000,
+              "default": 16000
+            },
+            "per_call_output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 4000,
+              "default": 2000
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 50
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    "run_input_json_schema": {
+      "$ref": "#/$defs/RunInput",
+      "$defs": {
+        "RunInput": {
+          "title": "RunInput",
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "query": {
+              "type": "string",
+              "maxLength": 2000,
+              "default": ""
+            },
+            "inline": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InlineInput"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "history": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HistoryMessage"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5
+            }
+          },
+          "required": [
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        "InlineInput": {
+          "title": "InlineInput",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 500000,
+              "minLength": 1
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1,
+              "default": "inline"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "HistoryMessage": {
+          "title": "HistoryMessage",
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "assistant",
+                "user"
+              ]
+            },
+            "content": {
+              "type": "string",
+              "maxLength": 2000,
+              "minLength": 1
+            }
+          },
+          "required": [
+            "role",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "profile_view_json_schema": {
+      "$ref": "#/$defs/ProfileView",
+      "$defs": {
+        "ProfileView": {
+          "title": "ProfileView",
+          "type": "object",
+          "properties": {
+            "profile_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version": {
+              "type": "integer"
+            },
+            "config": {
+              "$ref": "#/$defs/ProfileInput"
+            },
+            "created_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "profile_id",
+            "version",
+            "config",
+            "created_at"
+          ],
+          "additionalProperties": false
+        },
+        "ProfileInput": {
+          "title": "ProfileInput",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "capability": {
+              "enum": [
+                "analyze",
+                "extract",
+                "query",
+                "recommend",
+                "search",
+                "summarize"
+              ]
+            },
+            "goal": {
+              "type": "string",
+              "maxLength": 2000,
+              "minLength": 1
+            },
+            "selections": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Selection"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ],
+              "default": null
+            },
+            "comparison_period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ],
+              "default": null
+            },
+            "timezone": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1,
+              "default": "UTC"
+            },
+            "constraints": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 50,
+              "minLength": 1,
+              "default": "uk"
+            },
+            "output_schema": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Metric"
+              },
+              "maxItems": 20,
+              "default": []
+            },
+            "minimum_samples": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 1
+            },
+            "budget": {
+              "$ref": "#/$defs/Budget"
+            }
+          },
+          "required": [
+            "name",
+            "capability",
+            "goal"
+          ],
+          "additionalProperties": false
+        },
+        "Selection": {
+          "title": "Selection",
+          "type": "object",
+          "properties": {
+            "collection_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "schema_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 2
+              },
+              "maxItems": 30,
+              "minItems": 1
+            },
+            "kind": {
+              "enum": [
+                "event",
+                "record"
+              ],
+              "default": "record"
+            },
+            "mode": {
+              "enum": [
+                "current",
+                "history"
+              ],
+              "default": "current"
+            },
+            "filters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Filter"
+              },
+              "maxItems": 20,
+              "default": []
+            },
+            "time_field": {
+              "type": "string",
+              "default": "occurred_at"
+            },
+            "include_text": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "collection_id",
+            "schema_version",
+            "fields"
+          ],
+          "additionalProperties": false
+        },
+        "Filter": {
+          "title": "Filter",
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "maxLength": 300,
+              "minLength": 2
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "gt",
+                "gte",
+                "in",
+                "is_null",
+                "lt",
+                "lte",
+                "ne",
+                "not_null"
+              ]
+            },
+            "value": {
+              "default": null
+            }
+          },
+          "required": [
+            "field",
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        "Period": {
+          "title": "Period",
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "Metric": {
+          "title": "Metric",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "selection": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "operation": {
+              "enum": [
+                "average",
+                "count",
+                "max",
+                "min",
+                "sum"
+              ]
+            },
+            "field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "group_by": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "interval": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "day",
+                    "month",
+                    "week"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "name",
+            "selection",
+            "operation"
+          ],
+          "additionalProperties": false
+        },
+        "Budget": {
+          "title": "Budget",
+          "type": "object",
+          "properties": {
+            "max_records": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 1000
+            },
+            "max_fragments": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            },
+            "context_chars": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 30000,
+              "default": 24000
+            },
+            "model_calls": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 16
+            },
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 256000,
+              "default": 64000
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 32000,
+              "default": 16000
+            },
+            "per_call_output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 4000,
+              "default": 2000
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 50
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    "profile_page_json_schema": {
+      "$ref": "#/$defs/ProfilePage",
+      "$defs": {
+        "ProfilePage": {
+          "title": "ProfilePage",
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ProfileView"
+              }
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "next_cursor"
+          ],
+          "additionalProperties": false
+        },
+        "ProfileView": {
+          "title": "ProfileView",
+          "type": "object",
+          "properties": {
+            "profile_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version": {
+              "type": "integer"
+            },
+            "config": {
+              "$ref": "#/$defs/ProfileInput"
+            },
+            "created_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "profile_id",
+            "version",
+            "config",
+            "created_at"
+          ],
+          "additionalProperties": false
+        },
+        "ProfileInput": {
+          "title": "ProfileInput",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "capability": {
+              "enum": [
+                "analyze",
+                "extract",
+                "query",
+                "recommend",
+                "search",
+                "summarize"
+              ]
+            },
+            "goal": {
+              "type": "string",
+              "maxLength": 2000,
+              "minLength": 1
+            },
+            "selections": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Selection"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ],
+              "default": null
+            },
+            "comparison_period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ],
+              "default": null
+            },
+            "timezone": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1,
+              "default": "UTC"
+            },
+            "constraints": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 50,
+              "minLength": 1,
+              "default": "uk"
+            },
+            "output_schema": {
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "metrics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Metric"
+              },
+              "maxItems": 20,
+              "default": []
+            },
+            "minimum_samples": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 1
+            },
+            "budget": {
+              "$ref": "#/$defs/Budget"
+            }
+          },
+          "required": [
+            "name",
+            "capability",
+            "goal"
+          ],
+          "additionalProperties": false
+        },
+        "Selection": {
+          "title": "Selection",
+          "type": "object",
+          "properties": {
+            "collection_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "schema_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 2
+              },
+              "maxItems": 30,
+              "minItems": 1
+            },
+            "kind": {
+              "enum": [
+                "event",
+                "record"
+              ],
+              "default": "record"
+            },
+            "mode": {
+              "enum": [
+                "current",
+                "history"
+              ],
+              "default": "current"
+            },
+            "filters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Filter"
+              },
+              "maxItems": 20,
+              "default": []
+            },
+            "time_field": {
+              "type": "string",
+              "default": "occurred_at"
+            },
+            "include_text": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": [
+            "collection_id",
+            "schema_version",
+            "fields"
+          ],
+          "additionalProperties": false
+        },
+        "Filter": {
+          "title": "Filter",
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "maxLength": 300,
+              "minLength": 2
+            },
+            "op": {
+              "enum": [
+                "eq",
+                "gt",
+                "gte",
+                "in",
+                "is_null",
+                "lt",
+                "lte",
+                "ne",
+                "not_null"
+              ]
+            },
+            "value": {
+              "default": null
+            }
+          },
+          "required": [
+            "field",
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        "Period": {
+          "title": "Period",
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "Metric": {
+          "title": "Metric",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "selection": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "operation": {
+              "enum": [
+                "average",
+                "count",
+                "max",
+                "min",
+                "sum"
+              ]
+            },
+            "field": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "group_by": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "interval": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "day",
+                    "month",
+                    "week"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "name",
+            "selection",
+            "operation"
+          ],
+          "additionalProperties": false
+        },
+        "Budget": {
+          "title": "Budget",
+          "type": "object",
+          "properties": {
+            "max_records": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000,
+              "default": 1000
+            },
+            "max_fragments": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            },
+            "context_chars": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 30000,
+              "default": 24000
+            },
+            "model_calls": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 16
+            },
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 256000,
+              "default": 64000
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 32000,
+              "default": 16000
+            },
+            "per_call_output_tokens": {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 4000,
+              "default": 2000
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 50
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    "result_json_schema": {
+      "$ref": "#/$defs/CapabilityResult",
+      "$defs": {
+        "CapabilityResult": {
+          "title": "CapabilityResult",
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "result_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "capability": {
+              "enum": [
+                "analyze",
+                "extract",
+                "query",
+                "recommend",
+                "search",
+                "summarize"
+              ]
+            },
+            "profile_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "profile_version": {
+              "type": "integer"
+            },
+            "execution_status": {
+              "enum": [
+                "succeeded"
+              ]
+            },
+            "data_state": {
+              "enum": [
+                "insufficient_data",
+                "partial",
+                "sufficient"
+              ]
+            },
+            "payload": {
+              "type": "object"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ]
+            },
+            "comparison_period": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/Period"
+                }
+              ]
+            },
+            "timezone": {
+              "type": "string"
+            },
+            "coverage": {
+              "type": "object"
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "generated_at": {
+              "type": "string"
+            },
+            "data_as_of": {
+              "type": "string"
+            },
+            "freshness": {
+              "enum": [
+                "current",
+                "stale"
+              ]
+            },
+            "persisted": {
+              "type": "boolean"
+            },
+            "usage": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          },
+          "required": [
+            "run_id",
+            "result_id",
+            "capability",
+            "profile_id",
+            "profile_version",
+            "execution_status",
+            "data_state",
+            "payload",
+            "sources",
+            "period",
+            "comparison_period",
+            "timezone",
+            "coverage",
+            "limitations",
+            "generated_at",
+            "data_as_of",
+            "freshness",
+            "persisted",
+            "usage"
+          ],
+          "additionalProperties": false
+        },
+        "Period": {
+          "title": "Period",
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "result_page_json_schema": {
+      "$ref": "#/$defs/ResultPage",
+      "$defs": {
+        "ResultPage": {
+          "title": "ResultPage",
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ResultSummary"
+              }
+            },
+            "next_cursor": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "next_cursor"
+          ],
+          "additionalProperties": false
+        },
+        "ResultSummary": {
+          "title": "ResultSummary",
+          "type": "object",
+          "properties": {
+            "result_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "profile_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "profile_version": {
+              "type": "integer"
+            },
+            "capability": {
+              "enum": [
+                "analyze",
+                "extract",
+                "query",
+                "recommend",
+                "search",
+                "summarize"
+              ]
+            },
+            "execution_status": {
+              "enum": [
+                "succeeded"
+              ]
+            },
+            "data_state": {
+              "enum": [
+                "insufficient_data",
+                "partial",
+                "sufficient"
+              ]
+            },
+            "generated_at": {
+              "type": "string"
+            },
+            "freshness": {
+              "enum": [
+                "current",
+                "stale"
+              ]
+            }
+          },
+          "required": [
+            "result_id",
+            "profile_id",
+            "profile_version",
+            "capability",
+            "execution_status",
+            "data_state",
+            "generated_at",
+            "freshness"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "generated_payload_schemas": {
+      "query": {
+        "type": "object",
+        "properties": {
+          "insufficient_data": {
+            "type": "boolean"
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "insufficient_data",
+          "claims",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "summarize": {
+        "type": "object",
+        "properties": {
+          "insufficient_data": {
+            "type": "boolean"
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "insufficient_data",
+          "claims",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "analyze": {
+        "type": "object",
+        "properties": {
+          "insufficient_data": {
+            "type": "boolean"
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "insufficient_data",
+          "claims",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "recommend": {
+        "type": "object",
+        "properties": {
+          "insufficient_data": {
+            "type": "boolean"
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 20
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "insufficient_data",
+          "claims",
+          "limitations"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "payloads": {
+      "search": "{items: Source[]}; no text generation; lexical selected fields plus indexed-file cosine RRF",
+      "query": "{claims: [{text,source_ids}], limitations: string[]}; optional explicit history is context only",
+      "summarize": "{claims: [{text,source_ids}], limitations: string[]}; hierarchical part/reduce synthesis",
+      "extract": "{data: profile.output_schema object | null, source_ids: string[], claims: Claim[], limitations: string[]}; null on insufficient input",
+      "analyze": "{metrics: ExactMetric[], claims: Claim[], limitations: string[]}; exact metrics attached only by server",
+      "recommend": "{claims: Claim[], limitations: string[]}; claims are advisory proposals; no external commands or managed memory"
+    },
+    "selection": "Owner and source grants first. Explicit collection/schema version/kind, scalar JSON paths, filters ANDed. current selects current record version; history selects non-erased record snapshots/upserts or independent observations, excluding corrected observations. Snapshots are states, not actions. Unsupported arrays, formulas, code/SQL/tools are rejected.",
+    "filters": "eq/ne/in use typed non-null scalar values satisfying the pinned field schema. gt/gte/lt/lte are numeric only. is_null matches missing or JSON null; not_null excludes both. All other operators exclude null/missing. in has 1..100 values. Filters/time/metric fields must be selected.",
+    "time": "Aware half-open [start,end). time_field defaults to delivery occurred_at or a selected date-time path. Null/missing time excluded by periods, otherwise missing_time interval bucket. IANA timezone changes calendar buckets, never timestamp interpretation. Day/week(Monday)/month bucket labels are local start dates, including DST. Comparison periods are non-overlapping and use the same selection/filter.",
+    "metrics": "count counts received rows; sum/average/min/max require quantity mapping+unit, one selection per metric; no unit conversion. Null/missing quantities skipped. Empty/all-null numeric aggregates null; ungrouped empty count 0. Scalar category grouping preserves types, null/missing share one group. At most 100 groups/buckets per metric/period. Exact input exceeding max_records rejected, never silently sampled. Finite nonzero quantity magnitudes 1e-324..1e308, decimal precision 650 ROUND_HALF_EVEN. Values/differences are decimal strings; average denominator is non-null count. Comparison differences primary-minus-comparison align identical group and absolute calendar bucket; missing group/bucket null, never assumed zero.",
+    "retention": "Collected successful results (including insufficient_data) persist until explicit erasure/profile deletion. No auto expiry. Inline-only profiles have selections=[]; up to 10 explicit text inputs/500000 total characters; inputs/history/results never written to DB or managed memory; no inline periods or exact metrics. Profiles themselves are persisted, so never put private inline text in profile goals. Responses store=false, no server logs of prompts. Provider operational retention is governed separately by provider/account policy.",
+    "budgets": "Per-run bounded sources, records, fragments, model calls, input/output token reservations and time. Input reservation conservatively uses UTF-8 bytes + framing including system/schema; output reserves each full max_output_tokens. Capability clients have zero SDK retries. 4MiB selected-source JSON, 8MiB result envelope. search/query rank a bounded sample and always report partial; record projected-field lexical matching, authorized indexed-file cosine with RRF k=60. Other non-summary capabilities use first bounded text batch and disclose partial. Summary processes all selected batches then reduces; budget exhaustion fails explicitly. No hidden scheduling or background retries.",
+    "freshness": "Owner-locked collection outbox signature before/after provider; any collection mutation rejects save 409 input_changed. GET recomputes current/stale, never calls provider. Conservative collection-wide dependencies include absent rows. Erasure purges affected collection results, including correction chains, and cannot race-save them. Scope erasure deletes affected profiles; user erasure deletes all profiles. Run UUID is not a durable job/status endpoint in this step.",
+    "minimum_samples": "Each selected dataset and each requested period must meet the configured number of received rows; inline uses input count. Otherwise no generation, data_state=insufficient_data; exact metrics still returned. complete_selection describes pinned filtered selection only, never proves full external history.",
+    "provider": "OpenAI Responses strict JSON schema, store=false, no tools. Incomplete/refused/invalid output and unverified/duplicate source IDs rejected with 502. Failed/time-limited/budget/stale attempts do not overwrite previous success. Schema/source-ID validation does not prove semantic support or causality; real-model evaluation remains separate.",
+    "payload_json_schemas": {
+      "search": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "content",
+                "position"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "object"
+                },
+                "delivery_id": {
+                  "type": "string"
+                },
+                "evidence_path": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "type": "string"
+                },
+                "collection_id": {
+                  "type": "string"
+                },
+                "occurred_at": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "extraction_coverage": {
+                  "type": "string"
+                },
+                "object_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "event_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "object_version": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "schema_version": {
+                  "type": "integer"
+                },
+                "selection": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "extraction_limitations": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "query": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "claims",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "summarize": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "claims",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "extract": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "claims",
+          "limitations",
+          "data",
+          "source_ids"
+        ],
+        "additionalProperties": false
+      },
+      "analyze": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "operation": {
+                      "enum": [
+                        "count",
+                        "sum",
+                        "average",
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "selection": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "period": {
+                      "enum": [
+                        "primary",
+                        "comparison"
+                      ]
+                    },
+                    "group": {
+                      "type": [
+                        "string",
+                        "integer",
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "bucket": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "timezone": {
+                      "type": "string"
+                    },
+                    "unit": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^-?\\d+(\\.\\d+)?$"
+                    },
+                    "sample_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "value_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "null_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "decimal_precision": {
+                      "const": 650
+                    },
+                    "rounding": {
+                      "const": "ROUND_HALF_EVEN"
+                    },
+                    "denominator": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "source_ids": {
+                      "type": "array",
+                      "maxItems": 5000,
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "operation",
+                    "selection",
+                    "period",
+                    "group",
+                    "bucket",
+                    "timezone",
+                    "unit",
+                    "value",
+                    "sample_count",
+                    "value_count",
+                    "null_count",
+                    "decimal_precision",
+                    "rounding",
+                    "denominator",
+                    "source_ids"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "operation": {
+                      "const": "difference"
+                    },
+                    "selection": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "group": {
+                      "type": [
+                        "string",
+                        "integer",
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "bucket": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "unit": {
+                      "type": "string"
+                    },
+                    "primary": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^-?\\d+(\\.\\d+)?$"
+                    },
+                    "comparison": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^-?\\d+(\\.\\d+)?$"
+                    },
+                    "value": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^-?\\d+(\\.\\d+)?$"
+                    },
+                    "meaning": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "operation",
+                    "selection",
+                    "group",
+                    "bucket",
+                    "unit",
+                    "primary",
+                    "comparison",
+                    "value",
+                    "meaning"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "claims",
+          "limitations",
+          "metrics"
+        ],
+        "additionalProperties": false
+      },
+      "recommend": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "minItems": 1,
+                  "maxItems": 100
+                }
+              },
+              "required": [
+                "text",
+                "source_ids"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "claims",
+          "limitations"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "source_json_schema": {
+      "type": "object",
+      "required": [
+        "id",
+        "content",
+        "position"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "position": {
+          "type": "object"
+        },
+        "delivery_id": {
+          "type": "string"
+        },
+        "evidence_path": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "collection_id": {
+          "type": "string"
+        },
+        "occurred_at": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "extraction_coverage": {
+          "type": "string"
+        },
+        "object_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "object_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "selection": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "extraction_limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "capability_routes": [
+    {
+      "method": "POST",
+      "path": "/v1/profiles",
+      "scope": "profiles:write",
+      "request": "ProfileInput",
+      "response": "201 ProfileView(version=1)",
+      "implemented_step": 9
+    },
+    {
+      "method": "GET",
+      "path": "/v1/profiles",
+      "scope": "profiles:read",
+      "request": "cursor, limit",
+      "response": "ProfilePage (latest per profile)",
+      "implemented_step": 9
+    },
+    {
+      "method": "GET",
+      "path": "/v1/profiles/{profile_id}",
+      "scope": "profiles:read",
+      "request": null,
+      "response": "ProfileView (latest metadata; execution is explicit-version only)",
+      "implemented_step": 9
+    },
+    {
+      "method": "GET",
+      "path": "/v1/profiles/{profile_id}/versions/{version}",
+      "scope": "profiles:read",
+      "request": null,
+      "response": "ProfileView",
+      "implemented_step": 9
+    },
+    {
+      "method": "POST",
+      "path": "/v1/profiles/{profile_id}/versions/{version}",
+      "scope": "profiles:write",
+      "request": "ProfileInput",
+      "response": "201 ProfileView; next sequential immutable version",
+      "implemented_step": 9
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/profiles/{profile_id}",
+      "scope": "profiles:write",
+      "request": null,
+      "response": "200 deleted; cascades versions/results",
+      "implemented_step": 9
+    },
+    {
+      "method": "POST",
+      "path": "/v1/profiles/{profile_id}/runs",
+      "scope": "ai:run",
+      "request": "RunInput",
+      "response": "200 CapabilityResult; data:read additionally for collections",
+      "implemented_step": 9
+    },
+    {
+      "method": "GET",
+      "path": "/v1/results/{result_id}",
+      "scope": "results:read + data:read",
+      "request": null,
+      "response": "CapabilityResult; refreshed freshness, no model call",
+      "implemented_step": 9
+    },
+    {
+      "method": "GET",
+      "path": "/v1/profiles/{profile_id}/results",
+      "scope": "results:read + data:read",
+      "request": "cursor, limit",
+      "response": "ResultPage of small summaries; GET each result for payload",
+      "implemented_step": 9
+    }
+  ]
 }
