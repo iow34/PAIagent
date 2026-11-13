@@ -5,6 +5,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import EMBEDDING_DIM, Document, DocumentChunk
+from app.repositories.data_lifecycle import guard_user_write
 from app.security.context import AccessContext
 
 
@@ -35,6 +36,7 @@ class DocumentRepository:
         content_type: str,
         attempt_id: uuid.UUID,
     ) -> Document:
+        await guard_user_write(self._session, context)
         document = Document(
             tenant_id=context.tenant_id,
             user_id=context.user_id,

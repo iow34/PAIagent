@@ -19,14 +19,19 @@ REQUESTS_PER_MINUTE = 120
 def catalog(context: AccessContext) -> dict[str, Any]:
     return {
         "api_version": "1",
-        "contract_version": "0.2.0",
-        "completed_step": 6,
+        "contract_version": "0.3.0",
+        "completed_step": 7,
         "registry": {
             "sources": True,
             "collections": True,
             "schema_versions": True,
             "envelope_validation": True,
-            "record_persistence": False,
+            "record_persistence": True,
+            "event_history": True,
+            "imports_and_reconciliation": True,
+            "privacy_erasure": True,
+            "transactional_outbox": True,
+            "background_execution": False,
         },
         "capabilities": [
             {
@@ -82,6 +87,10 @@ def catalog(context: AccessContext) -> dict[str, Any]:
         },
         "limits": {
             "registry_request_bytes": REQUEST_BYTES,
+            "data_request_bytes": 1048576,
+            "batch_items": 100,
+            "import_parts_max": 10000,
+            "references_per_item": 20,
             "schema_bytes": MAX_SCHEMA_BYTES,
             "payload_bytes": MAX_PAYLOAD_BYTES,
             "schema_depth": MAX_DEPTH,
@@ -91,7 +100,9 @@ def catalog(context: AccessContext) -> dict[str, Any]:
             "page_size_max": 100,
             "document_upload_bytes": 1048576,
             "registry_requests_per_minute": REQUESTS_PER_MINUTE,
-            "rate_limit_scope": "peer IP per application process; shared across registry routes; no forwarded headers",
+            "data_requests_per_minute": REQUESTS_PER_MINUTE,
+            "data_request_timeout_seconds": 60,
+            "rate_limit_scope": "peer IP per application process; shared across integration routes; no forwarded headers",
         },
         "access": {
             "scopes": list(context.scopes),

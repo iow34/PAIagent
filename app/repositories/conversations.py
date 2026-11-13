@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.answer_types import AnswerResult
 from app.db.models import ConversationMessage, ConversationSession
+from app.repositories.data_lifecycle import guard_user_write
 from app.security.context import AccessContext
 
 MAX_HISTORY_MESSAGES = 50
@@ -27,6 +28,7 @@ class ConversationRepository:
         *,
         context: AccessContext,
     ) -> ConversationSession:
+        await guard_user_write(self._session, context)
         conversation = ConversationSession(
             tenant_id=context.tenant_id,
             user_id=context.user_id,
@@ -70,6 +72,7 @@ class ConversationRepository:
         answer: AnswerResult,
         expected_last_position: int | None = None,
     ) -> tuple[ConversationMessage, ConversationMessage]:
+        await guard_user_write(self._session, context)
         conversation = await self.get_session(
             context=context,
             session_id=session_id,

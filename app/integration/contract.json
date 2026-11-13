@@ -1,7 +1,7 @@
 {
   "api_version": "1",
-  "contract_version": "0.2.0",
-  "status": "Step 6 registry implemented; ingestion and execution routes below are design-only until advertised as available by /v1/capabilities.",
+  "contract_version": "0.3.0",
+  "status": "Steps 6–7 implemented: registry, validation, persisted records/events, history, imports, reconciliation and erasure. Files/profiles/runs/results remain planned.",
   "ownership": {
     "tenant": "Derived exclusively from the API key.",
     "registry": "Tenant-shared metadata guarded by operation and source grants.",
@@ -125,7 +125,9 @@
       "correlation_id"
     ],
     "versions": "Positive integers. Schema versions are explicit and immutable. No implicit latest, coercion, or automatic migration. Record/event version spaces are independent.",
-    "time": "RFC3339 timestamp with offset, normalized to UTC on ingestion. occurred_at is the external fact time; ordering uses object_version, not delivery time."
+    "time": "RFC3339 timestamp with offset, normalized to UTC on ingestion. occurred_at is the external fact time; ordering uses object_version, not delivery time.",
+    "source_sequence": "Optional positive integer on changes/observations, unique per tenant+user+collection; stream starts at 1. Snapshots prohibit it. Never inferred from object_version.",
+    "references": "Optional list, at most 20 {collection_id,external_id}; each target must exist and be active under the same owner and an allowed source. observe.external_id additionally links to an active object in the same collection. Semantic external_reference is an external label (e.g. ISBN), not an implicit local link."
   },
   "conventions": {
     "pagination": {
@@ -139,7 +141,7 @@
       },
       "ordering": "ascending immutable resource UUID; not a snapshot; concurrent new rows may require restarting enumeration"
     },
-    "filters": "Registry schemas accept kind=record|event. Planned content filters: source_id, collection_id, external_id, occurred_from (inclusive), occurred_before (exclusive). Unsupported query fields return 400 on registry routes.",
+    "filters": "Content lists are scoped by collection URL and owner; records support external_id; events additionally support occurred_from (inclusive) and occurred_before (exclusive). Unsupported/repeated query fields return 400.",
     "errors": {
       "shape": {
         "status_code": 422,
@@ -159,90 +161,46 @@
         "400": "Malformed DTO, unknown field/query or invalid parameter",
         "401": "Missing/invalid/inactive key",
         "403": "Missing operation/source grant",
-        "404": "Missing or foreign-tenant resource",
+        "404": "Missing or foreign-owner resource",
         "409": "Duplicate name/version or conflicting delivery",
         "413": "HTTP request exceeds body limit",
         "422": "Schema, semantic mapping, envelope or payload constraint",
         "429": "Rate limit; respect RateLimit-Reset",
-        "500": "Storage or unexpected server failure"
+        "500": "Storage or unexpected server failure",
+        "410": "Permanently erased identity; stop replay",
+        "503": "Temporary data storage failure; retry identical delivery",
+        "504": "Content request exceeded 60 seconds; retry identical deliveries because earlier batch items may have committed."
       }
     },
-    "rate_limits": "Registry: 120 requests/minute per peer IP per process, including failed requests. RateLimit-* headers; 429 has RateLimit-Reset in seconds. A shared deployment-wide quota is not implemented.",
+    "rate_limits": "Registry and data routes use 120 requests/minute per peer IP per process. RateLimit-* headers; respect RateLimit-Reset. Not a distributed tenant quota.",
     "compatibility": "Existing document/search/query routes retain their request/response bodies. Legacy keys keep legacy:* and catalog:read only. New grants require administrative issuance. Source-restricted keys cannot use unscoped legacy document routes.",
     "batch_ack": {
-      "planned_step": 7,
-      "atomicity": "Per-item transactions, not an atomic batch. At most 100 envelopes and 1 MiB per batch.",
+      "implemented_step": 7,
+      "atomicity": "POST records/events: per-item transactions, at most 100 typed envelopes and 1 MiB. DTO/body failures reject the whole request before writes. Valid DTOs are validated/persisted separately. HTTP 200 alone does not imply every item succeeded.",
       "response": {
-        "batch_id": "UUID",
+        "batch_id": "UUID for this response, not an idempotency key",
         "items": [
           {
             "index": 0,
             "status": "accepted|duplicate|rejected|stale",
-            "external_id": "optional",
-            "event_id": "optional",
-            "received_at": "RFC3339 for accepted/duplicate",
-            "error": "structured error or null"
+            "delivery_id": "UUID or null",
+            "object_id": "UUID or null",
+            "received_at": "RFC3339 or null",
+            "error": "{status_code,code,detail?,issues?} or null"
           }
         ]
       },
-      "retry": "Retry only failed/unknown items with identical identifiers and bodies; reuse of an event_id with different content returns conflict. Acknowledgement means persisted, not analyzed."
+      "retry": "Retry failed/unknown items with identical IDs and bodies; duplicate retains original receipt time. 410 is a permanent erasure boundary, never automatically create a new identity. Acknowledgement means committed, not indexed/analyzed."
     },
-    "idempotency": "Registry POST is create-only; duplicate name/version gives 409. Read the existing resource and compare. Planned ingestion uses source+collection+owner+event_id for changes/observations and external_id+object_version for state. No idempotency guarantee is claimed before step 7.",
-    "schema_migration": "Register a new version. Existing records retain their original schema version. Revalidation/backfill is a separate explicit operation in step 7; changing the schema does not transform stored data.",
-    "deletion": "Registry deletion/editing is not exposed. Step 7 defines tombstones, old delivery rejection and removal of derived data; validation of a delete envelope is not deletion."
+    "idempotency": "Registry POST is create-only (409). Ingestion identities: (owner, source, collection, event_id), and (object identity, object_version); a different immutable body conflicts. Time offsets normalize to UTC. JSON key order does not matter. Snapshot and upsert at the same version can share a receipt only when schema, payload, metadata, occurred_at and references agree. A late upsert enriches a snapshot receipt with event identity/sequence. Lower object versions are retained with stale status, without replacing current state. New observations are accepted regardless of occurred_at order.",
+    "schema_migration": "Register a new schema version; explicitly transform source payload and send a higher object_version referencing it. Prior versions retain their payload and original schema_version. No automatic reinterpretation or in-place backfill.",
+    "deletion": "data:delete permanently erases private payload, metadata, fingerprints and references from current/history rows; retained opaque IDs/versions and erasure fences prevent replay. Referencing records and observation correction chains are erased transitively. DELETE state-event erases its entire object. Collection/source deletes apply only to the current user; registry definitions remain. User delete includes legacy documents/chunks/vectors/knowledge and conversations. Restricted-source keys cannot erase all user data. Existing document writers and query saves are fenced; future workers must recheck fences and evidence versions before commit.",
+    "retention": "No automatic expiry in MVP: content remains until explicit deletion. Content-free identity markers/fences persist indefinitely; identities are not reusable. Reconnection requires an explicitly new object/collection/source or user identity outside the erased boundary. Source-side queues/backups/provider retention are owned by their operators; this API erases live application content, not external storage.",
+    "imports": "Atomic parts (0..100 snapshots, max 1 MiB), 1-based part <=10000, immutable snapshot_id+boundary+completeness. final declares the last part; out-of-order parts are allowed. Identical part replay returns saved acknowledgements. Reconciliation is read-only and paginated; no absent-object deletion. Source must capture a consistent snapshot plus an opaque change-log cursor and continue delivery after that cursor. API stores the boundary but cannot verify an external log.",
+    "completeness": "GET coverage reports source_sequence high watermark, missing ranges (at most 100 + truncation flag), unsequenced events, snapshots and erased receipts. GET import status distinguishes declared completeness from all parts received. history_complete is always false in this MVP; snapshots, contiguous received sequence prefixes and source declarations do not prove complete historical behavior.",
+    "background": "Data and data_outbox invalidation are committed in one owner-serialized transaction. No AI calls, indexing worker or scheduled analysis is triggered in step 7. A future worker must re-authorize context and source, reject fences/deleted evidence and compare input versions under the same owner lock before persisting results."
   },
   "planned_routes": [
-    {
-      "method": "POST",
-      "path": "/v1/collections/{collection_id}/imports",
-      "step": 7,
-      "scope": "data:write",
-      "request": {
-        "mode": "snapshot",
-        "items": "Envelope[snapshot], 1..100",
-        "completeness": "partial|complete",
-        "snapshot_id": "external ID",
-        "part": "positive integer",
-        "final": "boolean"
-      },
-      "response": "Batch acknowledgement; complete snapshots need explicit reconciliation, absence is not an implicit delete."
-    },
-    {
-      "method": "POST",
-      "path": "/v1/collections/{collection_id}/records",
-      "step": 7,
-      "scope": "data:write",
-      "request": {
-        "items": "Envelope[snapshot|upsert|delete], 1..100"
-      },
-      "response": "Batch acknowledgement"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/collections/{collection_id}/records",
-      "step": 7,
-      "scope": "data:read",
-      "request": "cursor, limit, external_id",
-      "response": "Owner-scoped current-state page; schema_version, object_version, received_at, provenance"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/collections/{collection_id}/events",
-      "step": 7,
-      "scope": "data:write",
-      "request": {
-        "items": "Envelope[upsert|delete|observe], 1..100"
-      },
-      "response": "Batch acknowledgement"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/collections/{collection_id}/events",
-      "step": 7,
-      "scope": "data:read",
-      "request": "cursor, limit, occurred_from, occurred_before, external_id",
-      "response": "Owner-scoped event history with event_id and received_at"
-    },
     {
       "method": "POST",
       "path": "/v1/collections/{collection_id}/files",
@@ -329,11 +287,12 @@
       }
     }
   ],
-  "future_scopes": "Planned scopes are not issuable until the corresponding capability is implemented.",
+  "future_scopes": "data:read, data:write, data:delete are now issuable. Profile/run/result scopes remain planned.",
   "examples": [
     "app/integration/examples/tasks.json",
     "app/integration/examples/books.json",
-    "app/integration/examples/learning_sessions.json"
+    "app/integration/examples/learning_sessions.json",
+    "app/integration/delivery_example.py"
   ],
   "schema_subset": {
     "name": "paiagent-1",
@@ -409,5 +368,675 @@
       },
       "duplicate": "Same path+role rejected."
     }
-  }
+  },
+  "ingestion_envelope_json_schema": {
+    "$ref": "#/$defs/IngestEnvelope",
+    "$defs": {
+      "IngestEnvelope": {
+        "title": "IngestEnvelope",
+        "type": "object",
+        "properties": {
+          "api_version": {
+            "enum": [
+              "1"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "operation": {
+            "enum": [
+              "delete",
+              "observe",
+              "snapshot",
+              "upsert"
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "object_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          },
+          "source_sequence": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ObjectReference"
+            },
+            "maxItems": 20,
+            "default": []
+          }
+        },
+        "required": [
+          "api_version",
+          "source_id",
+          "collection_id",
+          "schema_version",
+          "operation",
+          "occurred_at",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "ObjectReference": {
+        "title": "ObjectReference",
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "collection_id",
+          "external_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "batch_input_json_schema": {
+    "$ref": "#/$defs/BatchInput",
+    "$defs": {
+      "BatchInput": {
+        "title": "BatchInput",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/IngestEnvelope"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "IngestEnvelope": {
+        "title": "IngestEnvelope",
+        "type": "object",
+        "properties": {
+          "api_version": {
+            "enum": [
+              "1"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "operation": {
+            "enum": [
+              "delete",
+              "observe",
+              "snapshot",
+              "upsert"
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "object_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          },
+          "source_sequence": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ObjectReference"
+            },
+            "maxItems": 20,
+            "default": []
+          }
+        },
+        "required": [
+          "api_version",
+          "source_id",
+          "collection_id",
+          "schema_version",
+          "operation",
+          "occurred_at",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "ObjectReference": {
+        "title": "ObjectReference",
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "collection_id",
+          "external_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "import_input_json_schema": {
+    "$ref": "#/$defs/ImportInput",
+    "$defs": {
+      "ImportInput": {
+        "title": "ImportInput",
+        "type": "object",
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "boundary": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "part": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "final": {
+            "type": "boolean"
+          },
+          "completeness": {
+            "enum": [
+              "complete",
+              "partial"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/IngestEnvelope"
+            },
+            "maxItems": 100
+          },
+          "mode": {
+            "enum": [
+              "snapshot"
+            ],
+            "default": "snapshot"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "boundary",
+          "part",
+          "final",
+          "completeness",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "IngestEnvelope": {
+        "title": "IngestEnvelope",
+        "type": "object",
+        "properties": {
+          "api_version": {
+            "enum": [
+              "1"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "operation": {
+            "enum": [
+              "delete",
+              "observe",
+              "snapshot",
+              "upsert"
+            ]
+          },
+          "occurred_at": {
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "object_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          },
+          "source_sequence": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ObjectReference"
+            },
+            "maxItems": 20,
+            "default": []
+          }
+        },
+        "required": [
+          "api_version",
+          "source_id",
+          "collection_id",
+          "schema_version",
+          "operation",
+          "occurred_at",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "ObjectReference": {
+        "title": "ObjectReference",
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "collection_id",
+          "external_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "implemented_data_routes": [
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/imports",
+      "scope": "data:write",
+      "request": {
+        "mode": "snapshot",
+        "snapshot_id": "external ID",
+        "boundary": "opaque source change-log cursor",
+        "part": "1..10000",
+        "final": "boolean",
+        "completeness": "partial|complete",
+        "items": "Envelope[snapshot], 0..100"
+      },
+      "response": "200 {import_id,duplicate,items}; atomic part, read status/reconciliation separately",
+      "implemented_step": 7
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/records",
+      "scope": "data:write",
+      "request": {
+        "items": "Envelope[snapshot|upsert|delete], 1..100"
+      },
+      "response": "Batch acknowledgement",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/collections/{collection_id}/records",
+      "scope": "data:read",
+      "request": "cursor, limit, external_id",
+      "response": "Owner-scoped current-state page; schema_version, object_version, received_at, provenance",
+      "implemented_step": 7
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/events",
+      "scope": "data:write",
+      "request": {
+        "items": "Envelope[upsert|delete|observe], 1..100"
+      },
+      "response": "Batch acknowledgement",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/collections/{collection_id}/events",
+      "scope": "data:read",
+      "request": "cursor, limit, occurred_from, occurred_before, external_id",
+      "response": "Owner-scoped immutable version/event history; includes snapshots and corrected observations with corrected_by_id. Erased receipts are not exposed.",
+      "implemented_step": 7
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/records/single",
+      "scope": "data:write",
+      "response": "One snapshot/upsert/delete; delete also requires data:delete",
+      "implemented_step": 7
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/events/single",
+      "scope": "data:write",
+      "response": "One upsert/delete/observe; delete also requires data:delete",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/records/{object_id}",
+      "scope": "data:read",
+      "response": "Current active record",
+      "implemented_step": 7
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/records/{object_id}",
+      "scope": "data:write",
+      "response": "Full upsert replacement with a higher object_version",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/records/{object_id}/versions",
+      "scope": "data:read",
+      "response": "Paginated immutable object history",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/events/{delivery_id}",
+      "scope": "data:read",
+      "response": "Active receipt/history item",
+      "implemented_step": 7
+    },
+    {
+      "method": "POST",
+      "path": "/v1/events/{delivery_id}/corrections",
+      "scope": "data:write",
+      "response": "Observe only: new event_id, preserve predecessor, expose corrected_by_id; retryable",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/imports/{import_id}",
+      "scope": "data:read",
+      "response": "Parts, opaque boundary, declared and received snapshot completeness",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/imports/{import_id}/reconciliation",
+      "scope": "data:read",
+      "response": "Current versus imported versions, no implicit deletes",
+      "implemented_step": 7
+    },
+    {
+      "method": "GET",
+      "path": "/v1/collections/{collection_id}/coverage",
+      "scope": "data:read",
+      "response": "Sequence gaps, high watermark and explicit history limitations",
+      "implemented_step": 7
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/records/{object_id}",
+      "scope": "data:delete",
+      "response": "Erase object and dependent private content",
+      "implemented_step": 7
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/events/{delivery_id}",
+      "scope": "data:delete",
+      "response": "Erase observation correction chain, or the whole object for a state event",
+      "implemented_step": 7
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/collections/{collection_id}/data",
+      "scope": "data:delete",
+      "response": "Erase current user collection data and fence that identity",
+      "implemented_step": 7
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/sources/{source_id}/data",
+      "scope": "data:delete",
+      "response": "Erase current user source data and fence that identity",
+      "implemented_step": 7
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/users/me/data",
+      "scope": "data:delete",
+      "response": "Erase all current owner data including legacy content; requires unrestricted source grant",
+      "implemented_step": 7
+    }
+  ]
 }

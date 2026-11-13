@@ -1,4 +1,4 @@
-"""HTTP registry and dry-run validation; ingestion starts in step 7."""
+"""HTTP registry and base-envelope dry-run validation."""
 
 import json
 from importlib.resources import files
@@ -101,7 +101,7 @@ class IntegrationController(Controller):
     async def contract(
         self, access_context: NamedDependency[AccessContext]
     ) -> dict[str, Any]:
-        """Versioned design for subsequent steps; planned routes are not executable."""
+        """Implemented data contracts and explicitly planned later capabilities."""
         return json.loads(
             files("app.integration").joinpath("contract.json").read_text()
         )

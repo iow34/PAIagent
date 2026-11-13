@@ -17,6 +17,9 @@ SCOPES = frozenset(
         "schemas:read",
         "schemas:write",
         "data:validate",
+        "data:read",
+        "data:write",
+        "data:delete",
     }
 )
 

@@ -323,6 +323,9 @@ class IntegrationCollection(Base):
         ),
         UniqueConstraint("source_id", "name", name="uq_integration_collection_name"),
         UniqueConstraint("tenant_id", "id", name="uq_integration_collection_tenant_id"),
+        UniqueConstraint(
+            "tenant_id", "source_id", "id", name="uq_integration_collection_source_id"
+        ),
     )
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -375,3 +378,227 @@ class IntegrationSchema(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class DataOwner:
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="RESTRICT")
+    )
+    user_id: Mapped[str] = mapped_column(String(255))
+
+
+class CollectionData(DataOwner):
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("integration_sources.id", ondelete="RESTRICT")
+    )
+    collection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("integration_collections.id", ondelete="RESTRICT")
+    )
+
+
+class DataFence(DataOwner, Base):
+    """Permanent erasure boundary. No content, metadata or original payload."""
+
+    __tablename__ = "data_fences"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "scope", name="uq_data_fence"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    scope: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+def data_collection_constraint() -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(
+        ["tenant_id", "source_id", "collection_id"],
+        [
+            "integration_collections.tenant_id",
+            "integration_collections.source_id",
+            "integration_collections.id",
+        ],
+        ondelete="RESTRICT",
+    )
+
+
+class DataObject(CollectionData, Base):
+    __tablename__ = "data_objects"
+    __table_args__ = (
+        data_collection_constraint(),
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "id",
+            name="uq_data_object_owner_id",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "source_id",
+            "collection_id",
+            "external_id",
+            name="uq_data_object_identity",
+        ),
+        CheckConstraint("object_version >= 1", name="ck_data_object_version"),
+        Index(
+            "ix_data_objects_owner_collection",
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "id",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    external_id: Mapped[str] = mapped_column(String(255))
+    object_version: Mapped[int] = mapped_column()
+    schema_version: Mapped[int] = mapped_column()
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    data_metadata: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)
+    references: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    deleted: Mapped[bool] = mapped_column(default=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DataDelivery(CollectionData, Base):
+    """Immutable accepted history; erasure clears content but retains dedup identity."""
+
+    __tablename__ = "data_deliveries"
+    __table_args__ = (
+        data_collection_constraint(),
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id", "collection_id", "object_id"],
+            [
+                "data_objects.tenant_id",
+                "data_objects.user_id",
+                "data_objects.collection_id",
+                "data_objects.id",
+            ],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "(operation = 'observe' AND object_id IS NULL AND object_version IS NULL) OR (operation <> 'observe' AND object_id IS NOT NULL AND object_version >= 1)",
+            name="ck_data_delivery_object",
+        ),
+        CheckConstraint("schema_version >= 1", name="ck_data_delivery_schema_version"),
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "event_id",
+            name="uq_data_delivery_event",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "source_sequence",
+            name="uq_data_delivery_sequence",
+        ),
+        UniqueConstraint(
+            "object_id", "object_version", name="uq_data_delivery_version"
+        ),
+        CheckConstraint(
+            "operation IN ('snapshot','upsert','delete','observe')",
+            name="ck_data_delivery_operation",
+        ),
+        CheckConstraint(
+            "source_sequence IS NULL OR source_sequence >= 1",
+            name="ck_data_delivery_sequence",
+        ),
+        Index(
+            "ix_data_deliveries_owner_collection",
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "id",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    object_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("data_objects.id", ondelete="RESTRICT")
+    )
+    object_version: Mapped[int | None] = mapped_column()
+    event_id: Mapped[str | None] = mapped_column(String(255))
+    source_sequence: Mapped[int | None] = mapped_column()
+    schema_version: Mapped[int] = mapped_column()
+    operation: Mapped[str] = mapped_column(String(16))
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    corrected_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("data_deliveries.id", ondelete="RESTRICT")
+    )
+    state_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    data_metadata: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)
+    references: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    erased: Mapped[bool] = mapped_column(default=False)
+    applied: Mapped[bool] = mapped_column(default=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DataOutbox(CollectionData, Base):
+    """Durable invalidation only. A future worker must recheck owner fences and revision."""
+
+    __tablename__ = "data_outbox"
+    __table_args__ = (data_collection_constraint(),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    delivery_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("data_deliveries.id", ondelete="CASCADE")
+    )
+    object_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("data_objects.id", ondelete="CASCADE")
+    )
+    reason: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DataImport(CollectionData, Base):
+    __tablename__ = "data_imports"
+    __table_args__ = (
+        data_collection_constraint(),
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "snapshot_id",
+            name="uq_data_import_identity",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    snapshot_id: Mapped[str] = mapped_column(String(255))
+    boundary: Mapped[str] = mapped_column(String(255))
+    completeness: Mapped[str] = mapped_column(String(16))
+    final_part: Mapped[int | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DataImportPart(Base):
+    __tablename__ = "data_import_parts"
+    import_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("data_imports.id", ondelete="CASCADE"), primary_key=True
+    )
+    part: Mapped[int] = mapped_column(primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    acknowledgements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+
+
+class DataImportMember(Base):
+    __tablename__ = "data_import_members"
+    import_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("data_imports.id", ondelete="CASCADE"), primary_key=True
+    )
+    object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("data_objects.id", ondelete="CASCADE"), primary_key=True
+    )
+    object_version: Mapped[int] = mapped_column()
