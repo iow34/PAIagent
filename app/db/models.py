@@ -602,3 +602,29 @@ class DataImportMember(Base):
         ForeignKey("data_objects.id", ondelete="CASCADE"), primary_key=True
     )
     object_version: Mapped[int] = mapped_column()
+
+
+class EvidenceFragment(Base):
+    __tablename__ = "evidence_fragments"
+    __table_args__ = (Index("ix_evidence_delivery", "delivery_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    delivery_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("data_deliveries.id", ondelete="CASCADE")
+    )
+    ordinal: Mapped[int] = mapped_column()
+    content: Mapped[str] = mapped_column(Text)
+    position: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+    embedding_model: Mapped[str | None] = mapped_column(String(100))
+
+
+class FileProvenance(Base):
+    __tablename__ = "file_provenance"
+    delivery_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("data_deliveries.id", ondelete="CASCADE"), primary_key=True
+    )
+    digest: Mapped[str] = mapped_column(String(64))
+    format: Mapped[str] = mapped_column(String(16))
+    coverage: Mapped[str] = mapped_column(String(16))
+    total_parts: Mapped[int] = mapped_column()
+    limitations: Mapped[list[str]] = mapped_column(JSONB)

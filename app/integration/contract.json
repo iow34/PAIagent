@@ -1,7 +1,7 @@
 {
   "api_version": "1",
-  "contract_version": "0.3.0",
-  "status": "Steps 6–7 implemented: registry, validation, persisted records/events, history, imports, reconciliation and erasure. Files/profiles/runs/results remain planned.",
+  "contract_version": "0.4.0",
+  "status": "Steps 6–8 implemented: bounded format normalization and current owner/collection evidence with hybrid search. AI profiles and jobs remain planned.",
   "ownership": {
     "tenant": "Derived exclusively from the API key.",
     "registry": "Tenant-shared metadata guarded by operation and source grants.",
@@ -201,14 +201,6 @@
     "background": "Data and data_outbox invalidation are committed in one owner-serialized transaction. No AI calls, indexing worker or scheduled analysis is triggered in step 7. A future worker must re-authorize context and source, reject fences/deleted evidence and compare input versions under the same owner lock before persisting results."
   },
   "planned_routes": [
-    {
-      "method": "POST",
-      "path": "/v1/collections/{collection_id}/files",
-      "step": 8,
-      "scope": "data:write",
-      "request": "multipart: file + JSON metadata (external_id, object_version, schema_version, mapping)",
-      "response": "202 run ID; normalized records/documents retain source/collection provenance"
-    },
     {
       "method": "POST",
       "path": "/v1/profiles",
@@ -1038,5 +1030,62 @@
       "response": "Erase all current owner data including legacy content; requires unrestricted source grant",
       "implemented_step": 7
     }
-  ]
+  ],
+  "normalization_routes": [
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/files",
+      "scope": "data:write",
+      "description": "multipart file + JSON record envelope; TXT/MD/PDF text layer/EPUB spine"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/csv",
+      "scope": "data:write",
+      "description": "multipart file + snapshot envelope + explicit mapping JSON; per-row acknowledgements"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/normalize",
+      "scope": "data:write",
+      "description": "cursor/limit explicit normalization of pre-step-8 current JSON records"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/collections/{collection_id}/context",
+      "scope": "data:read",
+      "description": "cursor/limit fragments with source versions, positions and extraction limitations"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/index",
+      "scope": "data:write",
+      "description": "Explicit embedding batch up to 64; repeat until indexed=0"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/search",
+      "scope": "data:read",
+      "description": "JSON query, limit 1..20; pgvector + simple full-text RRF under collection/owner/source grant"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/evidence/{fragment_id}",
+      "scope": "data:read",
+      "description": "Current evidence only; access rechecked, stale/erased evidence 404."
+    }
+  ],
+  "normalization_limits": {
+    "file_bytes": 5242880,
+    "request_bytes": 6291456,
+    "text_characters": 500000,
+    "parts": 500,
+    "epub_entries": 2000,
+    "epub_unpacked_bytes": 20971520,
+    "csv_rows": 100,
+    "fragments": 1000,
+    "parser_seconds": 10,
+    "parser_cpu_seconds": 8,
+    "parser_memory_bytes": 805306368
+  }
 }

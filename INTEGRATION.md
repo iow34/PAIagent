@@ -1,6 +1,6 @@
-# PAIagent integration contract — steps 6–7
+# PAIagent integration contract — steps 6–8
 
-Contract version **0.3.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records are not yet indexed or passed to AI; execution of analysis profiles comes later.
+Contract version **0.4.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; execution of analysis profiles comes later.
 
 ## Install and run
 
@@ -331,3 +331,55 @@ Tests cover schema/envelope boundaries, real authenticated HTTP and PostgreSQL, 
 Content lifecycle and migration checks use real PostgreSQL. Legacy SQLite fixtures alone do not verify erasure fencing. The suite makes no real OpenAI requests. Model quality is outside this step. The implementation was validated on a temporary database; applying the migration to the configured working database is a separate deployment action.
 
 `docs/STEP7_PROGRESS.md` records the current implementation checkpoints, verification results and resumption instructions; `docs/STEP6_PROGRESS.md` preserves the prior step. Existing `.gitignore` rules still exclude `docs/` and `tests/`; this root guide, the JSON contract, examples and client are regular deliverable files. No commit, push or deployment is implied by saving them.
+
+## Step 8 — normalized formats and shared evidence (contract 0.4.0)
+
+Migration `b8e4f2a6c930` adds `evidence_fragments` and `file_provenance`. Apply it before running this release. Existing step-7 payloads remain intact; explicitly normalize old current data with `POST /v1/collections/{id}/normalize?limit=50`, following `next_cursor`. New JSON/CSV deliveries create fragments in the ingestion transaction, using only registered `search_text` mappings. Numeric/date/category values remain exact JSON values in the original schema-versioned delivery; an evidence item identifies that delivery for typed-value retrieval through `/v1/events/{delivery_id}`. No numeric value is reconstructed from embedding text.
+
+New APIs use `data:read`/`data:write` and the existing owner/source grants:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /v1/collections/{id}/files` | Multipart `file` and `envelope` (JSON IngestEnvelope string). Supports `.txt`, `.md`, text-layer `.pdf`, DRM-free `.epub`; envelope is snapshot/upsert with a schema-valid metadata payload. |
+| `POST /v1/collections/{id}/csv` | Multipart `file`, `envelope` (snapshot template), `mapping` (JSON configuration below). Returns line numbers and conversion/schema/ingestion errors per row. |
+| `POST /v1/collections/{id}/normalize` | Explicit paginated normalization of current pre-existing JSON data. No embedding calls. |
+| `GET /v1/collections/{id}/context` | Paginated evidence units; `cursor`, `limit=1..100`. Includes positions, record/event versions and extraction limitations. |
+| `GET /v1/evidence/{fragment_id}` | Retrieve a current evidence unit with fresh access checks; superseded/erased units return 404. |
+| `POST /v1/collections/{id}/index` | Explicit embedding batch, at most 64 units. Repeat until `indexed=0`. Requires configured OpenAI access, may incur provider costs. |
+| `POST /v1/collections/{id}/search` | JSON `{"query":"...","limit":5}`; vector/full-text RRF over current authorized collection evidence, limit 1..20. |
+
+The multipart envelope is the same record envelope used by step 7; its payload holds registered metadata, not a fabricated text-field schema for each file. The server stores extracted text, positions, byte fingerprint, format and extraction coverage, without retaining the original binary. Identical envelope/file replay is idempotent. Changed file bytes at the same version conflict; supply a higher object version. A previously accepted JSON-only version cannot later acquire a file: use a higher version. The source keeps the original binary for external retrieval; raw uploaded bytes and arbitrary URLs are not exposed through evidence.
+
+Example with existing `source_id`, `collection_id`, metadata schema and `envelope.json`:
+
+```sh
+curl --fail-with-body "$PAIAGENT_URL/v1/collections/$COLLECTION_ID/files" \
+  -H "Authorization: Bearer $PAIAGENT_API_KEY" -H "X-User-ID: $PAIAGENT_USER_ID" \
+  -F 'file=@/path/to/document.pdf' -F 'envelope=</path/to/envelope.json'
+```
+
+CSV mapping example (root fields only, no type inference):
+
+```json
+{
+  "columns": [
+    {"column":"title","field":"caption","type":"string","empty":"reject"},
+    {"column":"hours","field":"estimate","type":"number","empty":"null","unit":"hour"},
+    {"column":"status","field":"phase","type":"string","empty":"reject"}
+  ],
+  "id_column":"id", "version_column":"version",
+  "occurred_at":"2026-11-13T08:00:00Z", "encoding":"utf-8-sig", "delimiter":","
+}
+```
+
+Types: `string`, `integer`, finite `number`, lowercase `true|false` boolean, ISO `date`, offset-bearing `date-time`. Dates remain ISO strings for JSON Schema validation; there is no timezone/locale inference. Encodings: UTF-8 with optional BOM. Delimiters: comma, semicolon or tab. Empty behavior is `reject`, `null` or `omit`. A quantity mapping's CSV unit must exactly match the registered schema unit; units are not converted. Each row must contain an external ID and positive source version. Unmapped columns are ignored, duplicate/missing headers rejected. Valid rows persist independently; invalid rows have a visible line error. Retry the same unchanged CSV/envelope; changed successful rows require higher versions. Missing rows never imply deletion. CSV is a bounded ingestion batch, not a historical export.
+
+Limits: file 5 MiB, multipart request 6 MiB, extracted text 500,000 characters, 500 PDF pages/EPUB spine parts, 1,000 fragments/input, CSV 100 rows, EPUB 2,000 entries/20 MiB total uncompressed declared bytes. Over-limit files are rejected rather than silently truncated. Fragment length is at most 1,200 characters; indexing prepares batches using the existing embedding token limits. File parsing runs in a disposable process with an 8-second CPU limit and a 10-second wall deadline. Linux applies a 768 MiB address-space limit; macOS uses a parent RSS watchdog sampled every 50 ms (brief overshoot is possible). The worker receives only input/format, with a minimal environment and no service API credentials. It never executes document scripts, extracts archive files to disk, fetches URLs or performs OCR/DRM removal.
+
+PDF provenance uses actual 1-based page numbers; image-only PDFs are rejected, pages without extractable text cause partial coverage. PDF text-layer extraction does not reproduce layout or recognize image text. EPUB follows the OPF spine, with actual internal paths/section ordinals; encrypted EPUBs (including encryption manifests) are rejected. Active scripts/styles are omitted; images and non-spine material are outside extraction. TXT/Markdown retain extracted text, without executing markup. Character offsets refer to the extracted unit text, not binary file offsets. Full extraction coverage means all supported text units were visited; it is not proof that every visual element was interpreted.
+
+Context pages and search results carry explicit sampling limitations. UUID pages are not a snapshot under concurrent changes; `selection_complete` only indicates that the current page exhausted the remaining traversal. Collection/history completeness stays unknown. The pipeline supports all stored fragments in batches rather than treating the first 12 chunks as an entire book. Hierarchical summarization can later consume section/page units and their ordinals; no new summarization model or profile executor is added here.
+
+General evidence search is separate from legacy `/v1/search` and `/v1/query`, which keep their contracts and document pipeline. The common evidence endpoints are the shared context interface for later capabilities. Search applies owner/collection restrictions before ranking, validates the source grant, combines pgvector cosine rank and PostgreSQL `simple` full-text rank, and returns source identifiers and exact versions. It does not use unselected JSON fields as embedding/search text. Unindexed evidence participates only in full-text ranking. New versions immediately hide old fragments from current context/search/evidence retrieval; erasure deletes fragments/vectors/file provenance with the original private content. An indexing result is discarded if its evidence changed or was erased while the provider ran. Stored historical source payloads retain their original schema versions.
+
+The step-8 test suite uses deterministic embeddings and generated PDF/EPUB fixtures. It does not call paid models or establish real embedding quality. The existing legacy TXT/Markdown regression suite remains part of acceptance. New formats can be added as bounded adapters returning extraction units with honest positions/coverage, while integrators can convert unsupported formats to normalized JSON or text themselves.

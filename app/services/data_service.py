@@ -28,6 +28,8 @@ from app.db.models import (
     DataObject,
     DataOutbox,
     Document,
+    EvidenceFragment,
+    FileProvenance,
     IntegrationCollection,
 )
 from app.integration.data_types import (
@@ -408,6 +410,20 @@ class DataService(IntegrationService):
                 applied=applied,
             )
         )
+        if data.payload is not None:
+            from app.normalization.common import structured
+
+            for ordinal, (content, position) in enumerate(
+                structured(data.payload, schema.field_mappings)
+            ):
+                await repo.add(
+                    EvidenceFragment(
+                        delivery_id=delivery.id,
+                        ordinal=ordinal,
+                        content=content,
+                        position=position,
+                    )
+                )
         if applied:
             assert obj is not None and data.object_version is not None
             obj.object_version = data.object_version
@@ -841,6 +857,14 @@ class DataService(IntegrationService):
         # Keep PostgreSQL bind counts bounded for accumulated user histories.
         for offset in range(0, len(delivery_ids), 1000):
             batch_ids = delivery_ids[offset : offset + 1000]
+            await repo.session.execute(
+                delete(EvidenceFragment).where(
+                    EvidenceFragment.delivery_id.in_(batch_ids)
+                )
+            )
+            await repo.session.execute(
+                delete(FileProvenance).where(FileProvenance.delivery_id.in_(batch_ids))
+            )
             await repo.session.execute(
                 delete(DataOutbox).where(
                     *owner(DataOutbox, self.context),

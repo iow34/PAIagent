@@ -19,14 +19,16 @@ REQUESTS_PER_MINUTE = 120
 def catalog(context: AccessContext) -> dict[str, Any]:
     return {
         "api_version": "1",
-        "contract_version": "0.3.0",
-        "completed_step": 7,
+        "contract_version": "0.4.0",
+        "completed_step": 8,
         "registry": {
             "sources": True,
             "collections": True,
             "schema_versions": True,
             "envelope_validation": True,
             "record_persistence": True,
+            "normalized_context": True,
+            "normalized_hybrid_search": True,
             "event_history": True,
             "imports_and_reconciliation": True,
             "privacy_erasure": True,
@@ -66,11 +68,14 @@ def catalog(context: AccessContext) -> dict[str, Any]:
         "formats": {
             "schema_validation": ["application/json"],
             "document_upload": ["text/plain", "text/markdown"],
-            "planned_not_available": [
-                "text/csv",
+            "normalized_file_upload": [
+                "text/plain",
+                "text/markdown",
                 "application/pdf",
                 "application/epub+zip",
             ],
+            "csv_explicit_mapping": True,
+            "planned_not_available": ["image/ocr", "encrypted_documents"],
         },
         "configuration": {
             "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
@@ -88,6 +93,12 @@ def catalog(context: AccessContext) -> dict[str, Any]:
         "limits": {
             "registry_request_bytes": REQUEST_BYTES,
             "data_request_bytes": 1048576,
+            "normalization_request_bytes": 6291456,
+            "file_bytes": 5242880,
+            "extracted_characters": 500000,
+            "file_parts": 500,
+            "fragments_per_input": 1000,
+            "parser_seconds": 10,
             "batch_items": 100,
             "import_parts_max": 10000,
             "references_per_item": 20,
