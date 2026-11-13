@@ -124,7 +124,14 @@ class JobService(CapabilityService):
             grant_sources=None
             if self.context.source_ids is None
             else [str(s) for s in self.context.source_ids],
-            collection_ids=[str(s.collection_id) for s in config.selections],
+            collection_ids=sorted(
+                {str(s.collection_id) for s in config.selections}
+                | (
+                    {str(cid) for cid in config.personalization.collections}
+                    if config.personalization.enabled
+                    else set()
+                )
+            ),
             required_scopes=required,
             trigger_id=trigger.profile_id if trigger else None,
             trigger_revision=trigger.revision if trigger else None,

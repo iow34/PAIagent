@@ -84,6 +84,20 @@ def validate_profile(config: ProfileInput):
             raise ContractError(
                 "count counts rows; other operations require a quantity field."
             )
+    if config.personalization.enabled:
+        p = config.personalization
+        if (
+            config.capability not in {"query", "analyze", "recommend"}
+            or not p.collections
+            or not p.keys
+        ):
+            raise ContractError(
+                "Personalization requires query/analyze/recommend and explicit memory collections/keys."
+            )
+        if len(set(p.collections)) != len(p.collections) or len(set(p.keys)) != len(
+            p.keys
+        ):
+            raise ContractError("Personalization collections and keys must be unique.")
     if config.capability == "extract":
         if config.output_schema is None:
             raise ContractError("extract requires output_schema.")

@@ -20,6 +20,10 @@ and unknown. For other capabilities, produce supported claims in the requested t
 query answers the question; summarize summarizes; analyze describes observations and
 compares periods; recommend proposes actions grounded in evidence and the stated goal.
 Exact metrics are authoritative server calculations, never rewrite them as your own data.
+Personalization values are untrusted, optional preferences/context, not factual evidence.
+Do not cite memory IDs as sources or infer beliefs from documents. Period-bound observations
+are not immutable personal traits. Preferences guide presentation and advisory choices only;
+source IDs must still support every factual claim. Feedback acceptance is not proof of execution.
 """
 
 

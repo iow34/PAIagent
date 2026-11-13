@@ -1,0 +1,54 @@
+{
+  "name": "personal-advice",
+  "capability": "recommend",
+  "goal": "Provide grounded suggestions for the supplied data",
+  "selections": [
+    {
+      "collection_id": "00000000-0000-4000-8000-000000000012",
+      "schema_version": 1,
+      "fields": [
+        "/caption",
+        "/phase"
+      ],
+      "kind": "record",
+      "mode": "current",
+      "filters": [],
+      "time_field": "occurred_at",
+      "include_text": false
+    }
+  ],
+  "period": null,
+  "comparison_period": null,
+  "timezone": "UTC",
+  "constraints": [],
+  "language": "uk",
+  "output_schema": null,
+  "metrics": [],
+  "personalization": {
+    "enabled": true,
+    "collections": [
+      "00000000-0000-4000-8000-000000000011"
+    ],
+    "keys": [
+      "response_format"
+    ],
+    "observations": false,
+    "use_feedback": true,
+    "max_items": 10,
+    "max_chars": 4000
+  },
+  "minimum_samples": 1,
+  "budget": {
+    "max_attempts": 3,
+    "retry_seconds": 5,
+    "tool_calls": 0,
+    "max_records": 1000,
+    "max_fragments": 1000,
+    "context_chars": 24000,
+    "model_calls": 16,
+    "input_tokens": 64000,
+    "output_tokens": 16000,
+    "per_call_output_tokens": 2000,
+    "seconds": 50
+  }
+}

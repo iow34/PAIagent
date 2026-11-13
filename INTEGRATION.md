@@ -1,6 +1,6 @@
-# PAIagent integration contract — steps 6–10
+# PAIagent integration contract — steps 6–11
 
-Contract version **0.6.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; six AI capabilities execute through immutable profiles with synchronous runs, durable background jobs, change/interval triggers and saved collected-data results.
+Contract version **0.7.0**, API prefix **/v1**. This release provides the tenant-scoped registry, persisted records/events, immutable version history, imports, reconciliation and privacy erasure. The current document, search, conversation and document-knowledge APIs remain available. General records and supported files have a shared normalization/context/search API; six AI capabilities execute through immutable profiles with synchronous runs, durable background jobs, change/interval triggers saved collected-data results, explicit managed memory and result feedback.
 
 ## Install and run
 
@@ -18,7 +18,7 @@ Migration `a7d9e3f1b820` adds the seven `data_*` tables and a registry associati
 
 The schema registry and data lifecycle need PostgreSQL but do not make model calls. The existing application lifespan still expects the OpenAI configuration used by the document features.
 
-Live documentation: `/schema`. Machine-readable OpenAPI: `/schema/openapi.json`. The served OpenAPI describes implemented routes only. `GET /v1/capabilities` reports implemented capabilities, formats, limits and caller grants. `GET /v1/integration-contract` serves the bundled `app/integration/contract.json`, including implemented data/normalization/profile/result routes and durable jobs and change/interval triggers. Managed memory remains a later step. Planned routes are not executable and are absent from live OpenAPI.
+Live documentation: `/schema`. Machine-readable OpenAPI: `/schema/openapi.json`. The served OpenAPI describes implemented routes only. `GET /v1/capabilities` reports implemented capabilities, formats, limits and caller grants. `GET /v1/integration-contract` serves the bundled `app/integration/contract.json`, including implemented data/normalization/profile/result routes and durable jobs and change/interval triggers. Opt-in managed memory and feedback are described below. Planned routes are not executable and are absent from live OpenAPI.
 
 ## Authentication and ownership
 
@@ -447,7 +447,7 @@ Every run returns the shared CapabilityResult envelope. `execution_status=succee
 | `summarize` | Payload `{claims:[{text,source_ids}],limitations}`. Processes all selected source batches, summarizes each and recursively reduces them within the budget. All processed source IDs/positions remain in the envelope; final claim references must trace to supplied evidence. Multiple selected documents retain distinct source identities. |
 | `extract` | Requires `output_schema` using the bounded registered-schema subset; objects require all properties in `required` and `additionalProperties:false`. Use nullable fields for unknown values; enum fields implement classification. Payload `{data,source_ids,claims,limitations}`; `data=null` on insufficient evidence. No arbitrary code or schema references. |
 | `analyze` | Payload `{metrics,claims,limitations}`; metrics come exclusively from server operations below. Claims provide qualitative comparisons/observations. |
-| `recommend` | Payload `{claims,limitations}`; claims describe evidence-grounded advisory proposals for the declared goal. No command execution. Managed memory/personalization is reserved for step 11. |
+| `recommend` | Payload `{claims,limitations}`; claims describe evidence-grounded advisory proposals for the declared goal. No command execution. Managed memory/personalization is optional under the step-11 contract below. |
 
 For long extract/analyze/recommend inputs, qualitative generation uses the first bounded text batch and reports partial; exact analyze metrics still use all matching selected rows or fail explicitly. Search/query operate on a bounded candidate sample, not a full-corpus search guarantee. Summarize covers its selected batches, not necessarily every original/source-side object. Coverage distinguishes matched/selected rows and fragments, processed text, pinned schema, and unknown collection/history completeness. Large inputs beyond the selection/source or generation budget must be narrowed or explicitly given a larger supported budget.
 
@@ -591,3 +591,149 @@ Durable jobs store their bounded collection query/history until explicit erasure
 Object/observation erasure cancels affected collection jobs, clears their query/history/fingerprint, invalidates the lease and removes dependent results; this also covers results derived from absence, counts and corrected observations. Collection/source erasure cascades affected profiles, trigger configurations and jobs; user erasure removes all its private profiles/jobs, including inline run metadata. Tenant usage keeps only content-free reservation totals. An in-flight worker cannot save behind these changes. Historical request settings in a profile are separate private configuration; remove the profile when those settings themselves need erasure. Operational backups/provider retention remain outside live application cleanup.
 
 Verification and resume instructions are in `docs/STEP10_PROGRESS.md`. Tests cover manual/change/interval paths, independent HTTP polling, concurrent claims, tenant quotas/fairness, retry/timeout, revoked keys, changes/deletion during generation, and an actual worker subprocess killed with SIGKILL then restarted against the same temporary PostgreSQL. Providers are fake/local MockTransport; paid OpenAI quality and production load are not established by these checks. No working-database migration or deployed worker is implied by saving this implementation.
+
+## Step 11 — managed memory, personalization and feedback (contract 0.7.0)
+
+Migration `e1b7c5d9f263` follows `d0a6b4c8e152`. It adds `memory_settings`, `memory_messages`, `memory_items`, `memory_blocks`, `result_feedback` and `personalization_uses`; existing source data, profiles, jobs and results are preserved. Downgrade removes managed memory/feedback and its dependency metadata. Apply migrations before restarting web and worker processes. No additional dependency is required.
+
+The following are separate objects with separate meanings:
+
+| Object | Meaning |
+| --- | --- |
+| Collection records/events/documents | Source history/evidence, governed by the existing schema and ingestion lifecycle. A document is not a personal fact. |
+| Query history / explicit user-message receipts | Conversation context or an explicitly submitted user statement. Query history and assistant answers are never automatically extracted into memory. |
+| Preference | A versioned user assertion or a candidate confirmed by the caller. It guides presentation/advisory choices; it is not source evidence. |
+| Observation | A confirmed projection from a declared event field, with explicit period, sample count 1, unit when mapped and source provenance. It is not an immutable personal trait or established causality. |
+| Result feedback | An explicit assessment/decision about a result/proposal. Acceptance does not prove execution or benefit. Comments and AI outputs do not become preferences. |
+
+Memory is off by default and needs **two explicit opt-ins**: owner memory settings and an immutable analysis profile. All memory belongs to tenant+X-User-ID and a registered collection, making source grants enforceable even for explicit preferences/messages. Data from matching user IDs in different tenants is never merged. New exact scopes are `memory:read`, `memory:write`, `feedback:read`, `feedback:write`; existing keys receive none automatically. Owner-wide settings/forget operations require an unrestricted source grant. Other operations enforce the addressed collection's source grant.
+
+### Enable only declared collections, keys and fields
+
+Read `GET /v1/memory/settings` first; its initial version is 0. Feedback or memory mutations can advance the owner-wide version, so always use the returned version when changing settings. An unrestricted administration key with `memory:write` can then submit:
+
+```json
+{
+  "expected_version": 0,
+  "enabled": true,
+  "collections": ["MEMORY_COLLECTION_UUID"],
+  "definitions": [{
+    "key": "response_format",
+    "value_schema": {"type":"string","maxLength":20,"enum":["brief","detailed"]},
+    "message_prefixes": ["Response format: "]
+  }],
+  "field_rules": []
+}
+```
+
+Send this to `PUT /v1/memory/settings`, using the standard Authorization and X-User-ID headers. Collection IDs must exist in the caller's tenant/source grants and not be erased. A dedicated preferences collection can be empty: explicit preferences/messages do not need a source record. Definitions use the existing bounded scalar schema subset (no objects, arrays, references or executable validators); string values are at most 500 characters. Null/missing values are not preferences; use DELETE to forget. Keys use the documented ASCII identifier pattern. There are at most 10 collections, 30 keys and 30 field rules.
+
+For an actual schema-validated **user-authored record** such as `{"preferred_format":"brief"}`, an explicit field rule can be configured:
+
+```json
+{"collection_id":"MEMORY_COLLECTION_UUID","schema_version":1,
+ "field":"/preferred_format","key":"response_format","kind":"preference","source_kind":"record"}
+```
+
+The field must be declared and scalar in that registered schema. The trusted backend is responsible for declaring that it represents the user's own statement; the service never guesses authorship from text. Do not configure book text or third-party statements as user-preference fields. Attached files, including their metadata deliveries, are rejected by memory extraction. To record user notes about a document, submit a separate user-authored record/message.
+
+Event fields require `kind=observation, source_kind=event`. Extraction then needs an aware `[start,end)` period covering the event. The response retains that period, source/schema/object versions, field, unit if declared, `sample_count=1` and applicability limits. It does not infer a pattern or personality trait from one event. Observations are excluded from personalization unless the profile separately enables them; with a requested analysis/comparison period, their period must overlap one of those windows.
+
+### Explicit preferences and confirmable candidates
+
+`PUT /v1/memory/preferences` accepts:
+
+```json
+{"collection_id":"MEMORY_COLLECTION_UUID","key":"response_format",
+ "value":"brief","expected_version":0,"restore":false}
+```
+
+`expected_version=0` means no current confirmed preference for that collection/key. For a correction, fetch the current confirmed preference and use its actual version. Stale writes return `409 memory_version_conflict`. One confirmed preference per owner/collection/key is enforced in PostgreSQL. Explicit corrections take priority over inferred candidates and increment the memory version; old personalized results become stale rather than silently changing their historical payload.
+
+`POST /v1/memory/messages` explicitly records a bounded user-authored message and extracts only registered literal-prefix assignments:
+
+```json
+{"collection_id":"MEMORY_COLLECTION_UUID","external_id":"message-001",
+ "author":"user","text":"Response format: brief"}
+```
+
+This is a deterministic, configurable assignment grammar, **not arbitrary natural-language inference**. Prefixes are exact, non-overlapping, single-line literals; text after the prefix must satisfy the declared scalar schema. Numeric/boolean assignments use JSON scalar syntax. Prefixes can be localized. Quoted/unmatched prose produces no candidate. Multiple conflicting assignments for one key in a message are returned in `ambiguous_keys` with no candidate for that key. `author=assistant` and unknown fields are rejected.
+
+Message external IDs are owner+collection scoped. Exact replay returns the same candidate identity; different text under the same ID conflicts. Use versioned `PUT /v1/memory/messages/{id}` to edit the source, which invalidates its prior dependent memory, then creates new candidates. GET returns the explicitly retained user text. DELETE clears text/fingerprint and invalidates dependent memory; replay of that erased message identity is refused.
+
+`POST /v1/memory/extractions` accepts `{"delivery_id":"UUID","period":null}` for allowed current record fields, or an explicit aware period for event observations. It reads only matching collection/schema/kind/field rules. Old record versions, corrected/erased observations and uploaded files cannot create personal-memory candidates. Reprocessing deduplicates by stable source/key identity. There are no extra model calls or hidden extraction on ingestion, file upload, query or generation.
+
+All extracted items start as `state=candidate`. Inspect `GET /v1/memory/items?collection_id=...&status=candidate&limit=50`, then confirm intentionally:
+
+```http
+POST /v1/memory/items/{item_id}/confirm
+Content-Type: application/json
+
+{"expected_version":1}
+```
+
+Confirmation rechecks the current source, consent, version and deletion marker. A candidate that contradicts a confirmed preference returns `409 memory_conflict`; it cannot replace that preference. Use an explicit versioned preference correction to resolve the conflict. Same-value candidates merge into the existing confirmed preference. Ordinary source updates/corrections invalidate and clear dependent values; re-extraction of the new source produces candidates requiring confirmation again. Source/message history remains separate from the current memory record.
+
+### Use a bounded context in a profile
+
+Create a new immutable profile version with:
+
+```json
+"personalization": {
+  "enabled": true,
+  "collections": ["MEMORY_COLLECTION_UUID"],
+  "keys": ["response_format"],
+  "observations": false,
+  "use_feedback": true,
+  "max_items": 10,
+  "max_chars": 4000
+}
+```
+
+Personalization is supported for `query`, `analyze` and `recommend`. The profile must name non-empty unique memory collections and keys; these can differ from its data selections. Every referenced collection still needs current source grants. Owner settings must allow those collections/keys and be enabled. The profile's key order is its deterministic relevance priority; preferences and explicit assertions take precedence over observations. Only confirmed, current-source items enter the bounded context, at most 20 items/6000 serialized characters. The model is told that context is untrusted preference guidance and observations are period-bound; memory IDs are never allowed as factual source citations. Exact metrics continue to come exclusively from server computations over source data.
+
+`memory:read` is required to supply values and `feedback:read` to apply feedback. Optional read rights are checked against the current live key and its captured source bounds. Missing optional rights do not grant access; a generation can proceed without that context. An initial memory read has a one-second deadline and a savepoint: errors/timeouts fall back to the base response with `personalization.status=unavailable`. No memory write is attempted after an answer. If context was actually used, its revision, versions and permissions must still match before commit; unsafe changes return `409 personalization_changed` (or a cancelled lease) for bounded retry. Such an uncommitted attempt is not a delivered answer.
+
+The result envelope now includes `personalization` status, revision, memory IDs/versions, feedback coverage and suppressed recommendation count. It does not echo private memory values as source evidence. Saved results that used memory additionally require `memory:read` to retrieve; those that used feedback additionally require `feedback:read`. Unauthorized personalized summaries are omitted from lists. Normal corrections/policy changes mark previous personalized results stale. Explicit erasure physically removes results that depended on the erased memory, including their feedback.
+
+Changes to opted-in managed context also participate in an on-change trigger's durable signature. Saving results creates no memory update, so it does not loop. Turning memory off may request one unpersonalized refresh; subsequent memory/feedback revisions while it remains off do not create personalization recalculations. Source-data triggers still operate normally. There is no automatic profile replacement, model training or guarantee that more retained data improves the user experience.
+
+### Feedback with a concrete, verifiable effect
+
+Submit feedback about an accessible stored result:
+
+```http
+POST /v1/results/{result_id}/feedback
+Content-Type: application/json
+
+{"request_id":"feedback-001","rating":"unhelpful",
+ "decision":"rejected","claim_index":0,"comment":"This does not fit my current goal."}
+```
+
+`request_id` is an immutable owner-scoped idempotency key. A changed body under the same ID conflicts. Allowed ratings are `helpful|unhelpful`; decisions are `accepted|rejected|outdated`. `claim_index` addresses an existing payload claim; omission applies to all claims. At least one assessment, comment or explicit preference is required. `feedback:write` and data/source access are required. GET on that result's feedback is paginated and requires `feedback:read`; DELETE removes all feedback records for that result.
+
+For recommendations, the **latest explicit decision per normalized proposal text within the same profile** controls repeat suppression. Normalization is Unicode NFKC, case folding and collapsed whitespace. `rejected` and `outdated` suppress that exact normalized text; a later `accepted` decision allows it again. The server filters generated recommendation claims even if the model repeats them. If every claim is withheld, the run succeeds with `data_state=insufficient_data` and a feedback explanation. This is exact-repeat control, not a claim of semantic/paraphrase detection. Other capabilities retain feedback but do not suppress factual outputs. The effect requires both personalization opt-ins and feedback permission.
+
+An accepted proposal is **not** recorded as completed, executed, effective or a personal fact. A comment is not parsed into memory. If the caller explicitly provides a nested `preference` matching PreferenceWrite, it is validated as an independent user assertion and additionally needs `memory:write`, enabled owner settings, an allowed result/profile memory collection and the current preference version. Deleting feedback alone does not delete that separately asserted preference.
+
+`GET /v1/feedback/profiles` reports a transparent relevance heuristic over the latest record per result/claim target: helpful+accepted minus unhelpful+rejected+outdated. It inspects at most 1000 records and reports `partial`. This is an aid for the integrating backend, not confidence or verified usefulness. Run APIs still require the caller's explicit profile ID/version; the score never silently switches profiles.
+
+### Correct, disable and forget
+
+| Operation | Effect |
+| --- | --- |
+| Versioned preference PUT | Explicit correction; does not let a candidate override it. |
+| `PUT /memory/settings` with `enabled=false` | Stops future context use; keeps current private values for inspection. |
+| New profile version with personalization disabled | Stops that profile's context/feedback use; explicit owner settings remain separate. |
+| `DELETE /memory/items/{id}` | Clears value/provenance/period, leaves a tombstone and collection/key suppression marker, removes dependent results and cancels active personalized work. |
+| `DELETE /memory/messages/{id}` | Clears retained text/fingerprint and invalidates dependent values; erased receipt cannot replay. |
+| `DELETE /memory` | Owner-wide memory-only forget: clears values/messages, blocks all declared keys from automatic replay and disables memory. Requires an unrestricted source grant. Primary sources/dialogue and separate result feedback remain separately managed. |
+| Existing source/collection/user data erasure | Clears/cascades dependent memory, messages, feedback/results/jobs; primary erasure fences prevent restoration. Memory-source collections are part of profile/job privacy boundaries. |
+
+Deleting a candidate does not delete an independent explicit preference with the same key. Suppression markers prevent automatic re-extraction under that collection/key. A new explicit preference after deletion requires `restore=true` and the appropriate current confirmed version (0 if absent); that flag never authorizes background restoration of old values. Normal source/policy changes invalidate memory and mark affected results stale; erasure removes private dependent copies physically. The current value is versioned in place; old private values are not kept as a hidden memory history.
+
+Retention is explicit: current memory, explicitly submitted user-message text and feedback persist until deletion; there is no automatic expiry. Deleted items retain opaque identity and collection/key suppression, not value/provenance. Erased messages retain their immutable receipt identity, not text/fingerprint. User/source scope erasure removes private memory configuration for that scope. Feedback cascades with its result. Backups/provider operational retention remain outside application live-data erasure.
+
+Limits per owner: 2000 memory entries including tombstones, 1000 message receipts and 5000 feedback records; messages 8000 characters, memory strings 500, comments 1000. Hitting a storage bound returns `422 memory_limit`. Settings and memory API requests are bounded to 96 KiB with a 60-second request deadline. The generation context uses the existing profile/tenant budget; deterministic extraction adds no model calls. Examples with replaceable collection UUIDs are bundled in `app/integration/memory_examples/`.
+
+Verification/resumption is recorded in `docs/STEP11_PROGRESS.md`. Automated checks use temporary PostgreSQL, fake generation and local HTTP; they verify consent, isolation, context wiring, revisions, correction/erasure, exact feedback effects, worker integration and fallback. They do not prove real OpenAI personalization quality, semantic support or user benefit. No working-database migration, deployment or paid model call is implied.

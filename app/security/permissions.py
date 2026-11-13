@@ -26,6 +26,10 @@ SCOPES = frozenset(
         "runs:read",
         "runs:write",
         "results:read",
+        "memory:read",
+        "memory:write",
+        "feedback:read",
+        "feedback:write",
     }
 )
 

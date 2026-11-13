@@ -840,3 +840,145 @@ class AnalysisTenantUsage(Base):
     input_tokens: Mapped[int] = mapped_column(default=0)
     output_tokens: Mapped[int] = mapped_column(default=0)
     last_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MemorySettings(DataOwner, Base):
+    __tablename__ = "memory_settings"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", name="uq_memory_settings_owner"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    version: Mapped[int] = mapped_column(default=1)
+    revision: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class MemoryMessage(CollectionData, Base):
+    __tablename__ = "memory_messages"
+    __table_args__ = (
+        data_collection_constraint(),
+        UniqueConstraint(
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "external_id",
+            name="uq_memory_message_identity",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    external_id: Mapped[str] = mapped_column(String(100))
+    version: Mapped[int] = mapped_column(default=1)
+    content: Mapped[str | None] = mapped_column(Text)
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    erased: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class MemoryItem(CollectionData, Base):
+    __tablename__ = "memory_items"
+    __table_args__ = (
+        data_collection_constraint(),
+        UniqueConstraint(
+            "tenant_id", "user_id", "identity", name="uq_memory_item_identity"
+        ),
+        CheckConstraint("kind IN ('preference','observation')", name="ck_memory_kind"),
+        CheckConstraint(
+            "state IN ('candidate','confirmed','superseded','invalidated','deleted','rejected')",
+            name="ck_memory_state",
+        ),
+        Index("ix_memory_items_owner", "tenant_id", "user_id", "collection_id", "id"),
+        Index(
+            "uq_memory_confirmed_preference",
+            "tenant_id",
+            "user_id",
+            "collection_id",
+            "key",
+            unique=True,
+            postgresql_where=text("state = 'confirmed' AND kind = 'preference'"),
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    identity: Mapped[str] = mapped_column(String(64))
+    key: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(16))
+    state: Mapped[str] = mapped_column(String(16))
+    version: Mapped[int] = mapped_column(default=1)
+    origin: Mapped[str] = mapped_column(String(16))
+    value: Mapped[Any | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    period: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    delivery_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("data_deliveries.id", ondelete="CASCADE")
+    )
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("memory_messages.id", ondelete="CASCADE")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class MemoryBlock(CollectionData, Base):
+    __tablename__ = "memory_blocks"
+    __table_args__ = (
+        data_collection_constraint(),
+        UniqueConstraint(
+            "tenant_id", "user_id", "collection_id", "key", name="uq_memory_block"
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(64))
+
+
+class ResultFeedback(DataOwner, Base):
+    __tablename__ = "result_feedback"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "user_id", "request_id", name="uq_feedback_request"
+        ),
+        Index(
+            "ix_feedback_owner_profile",
+            "tenant_id",
+            "user_id",
+            "profile_id",
+            "revision",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    result_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_results.id", ondelete="CASCADE")
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_profiles.id", ondelete="CASCADE")
+    )
+    request_id: Mapped[str] = mapped_column(String(100))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    revision: Mapped[int] = mapped_column()
+    rating: Mapped[str | None] = mapped_column(String(16))
+    decision: Mapped[str | None] = mapped_column(String(16))
+    claim_index: Mapped[int | None] = mapped_column()
+    proposal_fingerprints: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    comment: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PersonalizationUse(Base):
+    __tablename__ = "personalization_uses"
+    result_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_results.id", ondelete="CASCADE"), primary_key=True
+    )
+    memory_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    memory_version: Mapped[int] = mapped_column()

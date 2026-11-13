@@ -21,8 +21,8 @@ REQUESTS_PER_MINUTE = 120
 def catalog(context: AccessContext) -> dict[str, Any]:
     return {
         "api_version": "1",
-        "contract_version": "0.6.0",
-        "completed_step": 10,
+        "contract_version": "0.7.0",
+        "completed_step": 11,
         "registry": {
             "sources": True,
             "collections": True,
@@ -40,6 +40,9 @@ def catalog(context: AccessContext) -> dict[str, Any]:
             "successful_analysis_results": True,
             "manual_change_interval_triggers": True,
             "durable_run_polling": True,
+            "managed_memory": True,
+            "result_feedback": True,
+            "opt_in_personalization": True,
         },
         "capabilities": [
             {
@@ -110,6 +113,9 @@ def catalog(context: AccessContext) -> dict[str, Any]:
                 "external_reference",
             ],
             "profiles_available": True,
+            "memory_settings": "/v1/memory/settings",
+            "memory_items": "/v1/memory/items",
+            "feedback": "/v1/results/{result_id}/feedback",
             "triggers_path": "/v1/profiles/{profile_id}/triggers",
             "run_creation_path": "/v1/runs",
             "run_status_path": "/v1/runs/{run_id}",

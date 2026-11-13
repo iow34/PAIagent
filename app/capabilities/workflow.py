@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import Any, Protocol, TypedDict
+from typing import Any, NotRequired, Protocol, TypedDict
 
 import msgspec
 from langgraph.graph import END, START, StateGraph
@@ -21,6 +21,7 @@ class State(TypedDict):
     payload: dict[str, Any]
     data_state: str
     processed_ids: list[str]
+    personalization: NotRequired[dict[str, Any]]
 
 
 def batches(sources, maximum):
@@ -48,6 +49,17 @@ def batches(sources, maximum):
 def request_for(state, sources, capability=None):
     config, run = state["config"], state["run"]
     return {
+        "personalization": [
+            {
+                **{k: v for k, v in item.items() if k != "provenance"},
+                **{
+                    key: item.get("provenance", {}).get(key)
+                    for key in ("sample_count", "unit", "applicability")
+                    if item["kind"] == "observation"
+                },
+            }
+            for item in state.get("personalization", {}).get("items", [])
+        ],
         "capability": capability or config.capability,
         "goal": config.goal,
         "language": config.language,
@@ -129,7 +141,7 @@ class AnalyzeAdapter(GroundedAdapter):
 
 
 class RecommendAdapter(GroundedAdapter):
-    """Advisory suggestions; memory integration is reserved for step 11."""
+    """Advisory suggestions with optional explicit managed context."""
 
 
 class SummaryAdapter:

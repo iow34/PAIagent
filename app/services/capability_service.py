@@ -26,6 +26,7 @@ from app.db.models import (
     AnalysisProfileVersion,
     AnalysisResult,
     EvidenceFragment,
+    PersonalizationUse,
 )
 from app.integration.validation import ContractError, bounded_json
 from app.repositories.data_lifecycle import check_fence, owner
@@ -62,6 +63,9 @@ class CapabilityService(DataService):
                 [m for m in config.metrics if m.selection == index],
             )
             schemas.append(schema)
+        if config.personalization.enabled:
+            for cid in config.personalization.collections:
+                await self.collection(repo, cid, writable=writable)
         return schemas
 
     async def load(self, repo, profile_id, version=None):
@@ -221,6 +225,13 @@ class CapabilityService(DataService):
         self, profile_id: UUID, data: RunInput, generator, embeddings, *, attempt=None
     ) -> dict[str, Any]:
         require_scope(self.context, "ai:run")
+        from app.personalization.context import (
+            empty,
+            load_context,
+            public_context,
+            suppress_repeats,
+        )
+
         data = msgspec.convert(msgspec.to_builtins(data), type=RunInput)
         bounded_json(msgspec.to_builtins(data), 1048576)
         async with self.transaction(write=True) as repo:
@@ -295,6 +306,15 @@ class CapabilityService(DataService):
                         "complete_selection": len(sources) == expected,
                     }
                 ]
+            personalization = empty()
+            if config.personalization.enabled:
+                try:
+                    async with asyncio.timeout(1), repo.session.begin_nested():
+                        personalization = await load_context(
+                            repo, self.context, config, profile_id
+                        )
+                except Exception:  # noqa: BLE001 - optional memory read fallback
+                    personalization = empty("unavailable")
         bounded_json(sources, 4 * 1024 * 1024)
         data_as_of = attempt_as_of or datetime.now(UTC)
         # The whole provider phase has a deadline and no live database transaction.
@@ -350,6 +370,7 @@ class CapabilityService(DataService):
                             "metrics": metrics,
                             "meter": meter,
                             "partial": partial,
+                            "personalization": personalization,
                         }
                     )
         except ContractError:
@@ -366,6 +387,9 @@ class CapabilityService(DataService):
                 detail="Provider failed or returned invalid evidence/output.",
                 extra={"code": "invalid_generation"},
             ) from error
+        suppressed = suppress_repeats(config, result, personalization)
+        personalization_info = public_context(personalization)
+        personalization_info["suppressed_recommendations"] = suppressed
         now = datetime.now(UTC)
         run_id, result_id = (
             (attempt.run_id if attempt is not None else uuid4()),
@@ -401,13 +425,14 @@ class CapabilityService(DataService):
             "limitations": [
                 "Schema-pinned selections only; history/collection completeness is unknown.",
                 "Source IDs are checked; semantic support requires separate quality evaluation.",
-                "Recommendations are advisory; managed memory is not enabled.",
+                "Recommendations are advisory; managed memory is opt-in contextual input, not factual evidence.",
                 "Search/query rank a bounded sample; JSON uses selected-field lexical matching, indexed files also use cosine RRF.",
             ],
             "generated_at": now.isoformat(),
             "data_as_of": data_as_of.isoformat(),
             "freshness": "current",
             "persisted": bool(collections),
+            "personalization": personalization_info,
             "usage": {
                 "model_calls": meter.calls,
                 "input_token_reservation": meter.input_tokens,
@@ -435,7 +460,22 @@ class CapabilityService(DataService):
                     "input_changed",
                     "Input changed during execution; retry against current data.",
                 )
+            if personalization["revision"] is not None:
+                current = await load_context(repo, self.context, config, profile_id)
+                if (
+                    current["revision"] != personalization["revision"]
+                    or current["items"] != personalization["items"]
+                    or set(current["rejected"]) != set(personalization["rejected"])
+                ):
+                    conflict(
+                        "personalization_changed",
+                        "Managed context changed during execution; retry.",
+                    )
             if collections:
+                dependency_collections = {str(cid) for cid in collections}
+                dependency_collections.update(
+                    item["collection_id"] for item in personalization["items"]
+                )
                 await repo.add(
                     AnalysisResult(
                         id=result_id,
@@ -444,11 +484,19 @@ class CapabilityService(DataService):
                         user_id=self.context.user_id,
                         profile_id=profile_id,
                         profile_version=data.version,
-                        collection_ids=[str(c) for c in collections],
+                        collection_ids=sorted(dependency_collections),
                         envelope=envelope,
                         snapshot=signature,
                     )
                 )
+                for item in personalization["items"]:
+                    await repo.add(
+                        PersonalizationUse(
+                            result_id=result_id,
+                            memory_id=UUID(item["id"]),
+                            memory_version=item["version"],
+                        )
+                    )
             if attempt is not None:
                 await attempt.succeed(repo)
         return envelope
@@ -465,14 +513,26 @@ class CapabilityService(DataService):
                     )
                 )
             )
+            personal = row.envelope.get("personalization", {})
+            if personal.get("memory"):
+                require_scope(self.context, "memory:read")
+            if personal.get("feedback_records"):
+                require_scope(self.context, "feedback:read")
             _, config = await self.load(repo, row.profile_id, row.profile_version)
             await self.configuration(repo, config, writable=True)
             current = await snapshot(
                 repo, self.context, [s.collection_id for s in config.selections]
             )
+            from app.personalization.context import current_revision
+
+            memory_current = not personal.get("revision") or personal[
+                "revision"
+            ] == await current_revision(repo, self.context)
             return {
                 **row.envelope,
-                "freshness": "current" if row.snapshot == current else "stale",
+                "freshness": "current"
+                if row.snapshot == current and memory_current
+                else "stale",
             }
 
     async def results(
@@ -489,6 +549,7 @@ class CapabilityService(DataService):
                 AnalysisResult.envelope["capability"].astext.label("capability"),
                 AnalysisResult.envelope["data_state"].astext.label("data_state"),
                 AnalysisResult.envelope["generated_at"].astext.label("generated_at"),
+                AnalysisResult.envelope["personalization"].label("personalization"),
             ).where(
                 *owner(AnalysisResult, self.context),
                 AnalysisResult.profile_id == profile_id,
@@ -508,6 +569,14 @@ class CapabilityService(DataService):
             ).all()
             items = []
             for row in rows[:limit]:
+                personal = row.personalization or {}
+                if personal.get("memory") and "memory:read" not in self.context.scopes:
+                    continue
+                if (
+                    personal.get("feedback_records")
+                    and "feedback:read" not in self.context.scopes
+                ):
+                    continue
                 try:
                     _, config = await self.load(repo, profile_id, row.profile_version)
                     await self.configuration(repo, config, writable=True)
@@ -518,6 +587,11 @@ class CapabilityService(DataService):
                 current = await snapshot(
                     repo, self.context, [s.collection_id for s in config.selections]
                 )
+                from app.personalization.context import current_revision
+
+                memory_current = not personal.get("revision") or personal[
+                    "revision"
+                ] == await current_revision(repo, self.context)
                 items.append(
                     {
                         "result_id": str(row.id),
@@ -527,7 +601,9 @@ class CapabilityService(DataService):
                         "execution_status": "succeeded",
                         "data_state": row.data_state,
                         "generated_at": row.generated_at,
-                        "freshness": "current" if row.snapshot == current else "stale",
+                        "freshness": "current"
+                        if row.snapshot == current and memory_current
+                        else "stale",
                     }
                 )
             return {

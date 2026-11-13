@@ -1,0 +1,24 @@
+{
+  "expected_version": 0,
+  "enabled": true,
+  "collections": [
+    "00000000-0000-4000-8000-000000000011"
+  ],
+  "definitions": [
+    {
+      "key": "response_format",
+      "value_schema": {
+        "type": "string",
+        "maxLength": 20,
+        "enum": [
+          "brief",
+          "detailed"
+        ]
+      },
+      "message_prefixes": [
+        "Response format: "
+      ]
+    }
+  ],
+  "field_rules": []
+}

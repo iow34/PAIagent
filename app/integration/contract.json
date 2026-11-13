@@ -1,7 +1,7 @@
 {
   "api_version": "1",
-  "contract_version": "0.6.0",
-  "status": "Steps 6–10 implemented: durable PostgreSQL runs, worker, outbox/interval triggers and polling result delivery.",
+  "contract_version": "0.7.0",
+  "status": "Steps 6–11 implemented: explicit source-scoped memory, opt-in personalization and feedback with deterministic repeat suppression.",
   "ownership": {
     "tenant": "Derived exclusively from the API key.",
     "registry": "Tenant-shared metadata guarded by operation and source grants.",
@@ -201,7 +201,7 @@
     "background": "Ingestion and its outbox mutation receipt commit in one owner transaction. The PostgreSQL worker/scheduler now consumes this durable intent by fingerprint, commits job plus trigger cursor atomically, and executes with live key/source/fence/lease checks. No result outbox loop. Indexing remains an explicit separate API operation."
   },
   "planned_routes": [],
-  "future_scopes": "runs:read and runs:write are issuable. Runs also require ai:run and data:read for collections; no existing key gains scopes implicitly.",
+  "future_scopes": "memory:read, memory:write, feedback:read, feedback:write are issuable; existing keys gain none implicitly.",
   "examples": [
     "app/integration/examples/tasks.json",
     "app/integration/examples/books.json",
@@ -1109,6 +1109,9 @@
               "maxItems": 20,
               "default": []
             },
+            "personalization": {
+              "$ref": "#/$defs/Personalization"
+            },
             "minimum_samples": {
               "type": "integer",
               "minimum": 1,
@@ -1305,6 +1308,56 @@
             "selection",
             "operation"
           ],
+          "additionalProperties": false
+        },
+        "Personalization": {
+          "title": "Personalization",
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "collections": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "maxItems": 30,
+              "default": []
+            },
+            "observations": {
+              "type": "boolean",
+              "default": false
+            },
+            "use_feedback": {
+              "type": "boolean",
+              "default": true
+            },
+            "max_items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "max_chars": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 6000,
+              "default": 4000
+            }
+          },
+          "required": [],
           "additionalProperties": false
         },
         "Budget": {
@@ -1597,6 +1650,9 @@
               "maxItems": 20,
               "default": []
             },
+            "personalization": {
+              "$ref": "#/$defs/Personalization"
+            },
             "minimum_samples": {
               "type": "integer",
               "minimum": 1,
@@ -1793,6 +1849,56 @@
             "selection",
             "operation"
           ],
+          "additionalProperties": false
+        },
+        "Personalization": {
+          "title": "Personalization",
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "collections": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "maxItems": 30,
+              "default": []
+            },
+            "observations": {
+              "type": "boolean",
+              "default": false
+            },
+            "use_feedback": {
+              "type": "boolean",
+              "default": true
+            },
+            "max_items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "max_chars": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 6000,
+              "default": 4000
+            }
+          },
+          "required": [],
           "additionalProperties": false
         },
         "Budget": {
@@ -2023,6 +2129,9 @@
               "maxItems": 20,
               "default": []
             },
+            "personalization": {
+              "$ref": "#/$defs/Personalization"
+            },
             "minimum_samples": {
               "type": "integer",
               "minimum": 1,
@@ -2221,6 +2330,56 @@
           ],
           "additionalProperties": false
         },
+        "Personalization": {
+          "title": "Personalization",
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "collections": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "maxItems": 10,
+              "default": []
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "maxItems": 30,
+              "default": []
+            },
+            "observations": {
+              "type": "boolean",
+              "default": false
+            },
+            "use_feedback": {
+              "type": "boolean",
+              "default": true
+            },
+            "max_items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "max_chars": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 6000,
+              "default": 4000
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
         "Budget": {
           "title": "Budget",
           "type": "object",
@@ -2402,6 +2561,10 @@
               "additionalProperties": {
                 "type": "integer"
               }
+            },
+            "personalization": {
+              "type": "object",
+              "default": {}
             }
           },
           "required": [
@@ -2748,7 +2911,7 @@
     "filters": "eq/ne/in use typed non-null scalar values satisfying the pinned field schema. gt/gte/lt/lte are numeric only. is_null matches missing or JSON null; not_null excludes both. All other operators exclude null/missing. in has 1..100 values. Filters/time/metric fields must be selected.",
     "time": "Aware half-open [start,end). time_field defaults to delivery occurred_at or a selected date-time path. Null/missing time excluded by periods, otherwise missing_time interval bucket. IANA timezone changes calendar buckets, never timestamp interpretation. Day/week(Monday)/month bucket labels are local start dates, including DST. Comparison periods are non-overlapping and use the same selection/filter.",
     "metrics": "count counts received rows; sum/average/min/max require quantity mapping+unit, one selection per metric; no unit conversion. Null/missing quantities skipped. Empty/all-null numeric aggregates null; ungrouped empty count 0. Scalar category grouping preserves types, null/missing share one group. At most 100 groups/buckets per metric/period. Exact input exceeding max_records rejected, never silently sampled. Finite nonzero quantity magnitudes 1e-324..1e308, decimal precision 650 ROUND_HALF_EVEN. Values/differences are decimal strings; average denominator is non-null count. Comparison differences primary-minus-comparison align identical group and absolute calendar bucket; missing group/bucket null, never assumed zero.",
-    "retention": "Collected successful results (including insufficient_data) persist until explicit erasure/profile deletion. No auto expiry. Inline-only profiles have selections=[]; up to 10 explicit text inputs/500000 total characters; inputs/history/results never written to DB or managed memory; no inline periods or exact metrics. Profiles themselves are persisted, so never put private inline text in profile goals. Responses store=false, no server logs of prompts. Provider operational retention is governed separately by provider/account policy.",
+    "retention": "Collected successful results (including insufficient_data) persist until explicit erasure/profile deletion. No auto expiry. Inline-only profiles have selections=[]; up to 10 explicit text inputs/500000 total characters; inputs/history/results never written to DB or managed memory automatically; no inline periods or exact metrics. Profiles themselves are persisted, so never put private inline text in profile goals. Responses store=false, no server logs of prompts. Provider operational retention is governed separately by provider/account policy.",
     "budgets": "Per-run bounded sources, records, fragments, model calls, input/output token reservations and time. Input reservation conservatively uses UTF-8 bytes + framing including system/schema; output reserves each full max_output_tokens. Capability clients have zero SDK retries. 4MiB selected-source JSON, 8MiB result envelope. search/query rank a bounded sample and always report partial; record projected-field lexical matching, authorized indexed-file cosine with RRF k=60. Other non-summary capabilities use first bounded text batch and disclose partial. Summary processes all selected batches then reduces; budget exhaustion fails explicitly. Durable retries/scheduling require the documented run/trigger APIs; indexing is still explicit. Step10: API synchronous profiles and durable attempts share tenant admission; see background_execution.",
     "freshness": "Owner-locked collection outbox signature before/after provider; any collection mutation rejects save 409 input_changed. GET recomputes current/stale, never calls provider. Conservative collection-wide dependencies include absent rows. Erasure purges affected collection results, including correction chains, and cannot race-save them. Scope erasure deletes affected profiles; user erasure deletes all profiles. API-generated run UUIDs now identify durable status metadata in /v1/runs/{run_id}; inline synchronous output remains ephemeral. Internal non-admitted service calls are not public job submissions. Durable jobs use lease/token/live-key fences and atomically commit result plus succeeded state.",
     "minimum_samples": "Each selected dataset and each requested period must meet the configured number of received rows; inline uses input count. Otherwise no generation, data_state=insufficient_data; exact metrics still returned. complete_selection describes pinned filtered selection only, never proves full external history.",
@@ -4278,10 +4441,1281 @@
     "leases": "90s lease, fresh UUID per attempt. Attempt has whole-execution deadline effective profile seconds+10 (max50). No heartbeat/checkpointer needed within that bounded lease. Expired attempt cannot save. Recovery after process loss waits for lease expiry and applies backoff. Pending work remains in PostgreSQL while web/worker is offline.",
     "atomicity": "Existing ingestion+outbox receipt transaction is the durable recalculation intent. Scheduler checks full outbox fingerprint and commits coalesced job+trigger cursor together. Result insertion and succeeded run share the owner/lease-checked transaction; unique result.run_id prevents duplicate visible success.",
     "triggers": "One configuration per owner-private profile, pinned version, captured API-key identity/grant caps. on_change observes mutations after activation baseline; debounce has bounded max_wait. Interval 60..2592000 seconds with optional aware start_at, default now+interval; UTC-duration schedule, no cron inference; missed ticks coalesce, next_due remains anchor-aligned. Result saves create no source outbox. Trigger changes cancel active work and rotate revision; authorization failure disables trigger until reconfigured. TriggerView.enabled is effective state; config.enabled is the submitted setting and may differ after automatic authorization disable.",
-    "freshness": "Input snapshot and data_as_of are recorded at each attempt start, profile version fixed from enqueue. Source changes reject stale save and retry within budget. A trigger can retain one pending successor while a run is active; superseded failed attempt yields to successor. Trigger queue pressure does not advance its dirty signature; changes are retried on later scheduler polls.",
+    "freshness": "Input snapshot and data_as_of are recorded at each attempt start, profile version fixed from enqueue. Source changes reject stale save and retry within budget. A trigger can retain one pending successor while a run is active; superseded failed attempt yields to successor. Trigger queue pressure does not advance its dirty signature; changes are retried on later scheduler polls. Opted-in profiles also observe owner memory revision for on-change scheduling; memory source collections are included in job grant/privacy boundaries.",
     "authorization": "Raw key secret is never stored. Enqueue captures key ID plus scope/source upper bounds. Worker intersects with current live key grants at claim/start/save; revoked/deleted keys or removed source/data/AI grants block processing/persistence. Owner/source/fences always rechecked. Job list/get never expose stored query/history.",
     "retention": "Async inline is rejected. Collection query/history are persisted in job.input until erasure/profile deletion; no auto-expiry in this MVP. Old sync inline remains text/output-ephemeral: only run metadata/grants/budget are retained; no content fingerprint is retained; request text/output not saved. Erasure clears job input/fingerprint, cancels attempts, removes dependent results; scoped profile deletion cascades jobs/triggers. Tenant usage keeps content-free reservation totals.",
     "quotas": "Global short database admission lock serializes queue accounting across worker/API processes. At most 100 active jobs, 2 running jobs and 100 triggers per tenant. Claim order rotates tenants via last_claimed_at; saturated tenants do not block eligible other tenants. Effective profile budget is clamped to server maxima and persisted at admission. UTC daily reservations charge full call/input/output allowances per attempt, including failed/crashed work; no optimistic refunds. Daily quota defers jobs to next UTC midnight; active queue overflow returns429. Cancellation does not refund reservations.",
     "polling": "GET /runs and GET /results never generate. Job UUID and result UUID are separate; result_id only exists for persisted successful collected output. Idempotency key is owner-scoped, immutable profile+RunInput fingerprint; mode is a delivery preference, not a new computation. Different body conflicts409. Same completed request returns same run/result. Server errors are safe codes only; no prompts/provider/SQL details."
+  },
+  "managed_memory": {
+    "schemas": {
+      "SettingsInput": {
+        "$ref": "#/$defs/SettingsInput",
+        "$defs": {
+          "SettingsInput": {
+            "title": "SettingsInput",
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": false
+              },
+              "collections": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maxItems": 10,
+                "default": []
+              },
+              "definitions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Definition"
+                },
+                "maxItems": 30,
+                "default": []
+              },
+              "field_rules": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/FieldRule"
+                },
+                "maxItems": 30,
+                "default": []
+              }
+            },
+            "required": [
+              "expected_version"
+            ],
+            "additionalProperties": false
+          },
+          "Definition": {
+            "title": "Definition",
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "value_schema": {
+                "type": "object"
+              },
+              "message_prefixes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "minLength": 1
+                },
+                "maxItems": 5,
+                "default": []
+              }
+            },
+            "required": [
+              "key",
+              "value_schema"
+            ],
+            "additionalProperties": false
+          },
+          "FieldRule": {
+            "title": "FieldRule",
+            "type": "object",
+            "properties": {
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "schema_version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 2
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "enum": [
+                  "observation",
+                  "preference"
+                ],
+                "default": "preference"
+              },
+              "source_kind": {
+                "enum": [
+                  "event",
+                  "record"
+                ],
+                "default": "record"
+              }
+            },
+            "required": [
+              "collection_id",
+              "schema_version",
+              "field",
+              "key"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "PreferenceWrite": {
+        "$ref": "#/$defs/PreferenceWrite",
+        "$defs": {
+          "PreferenceWrite": {
+            "title": "PreferenceWrite",
+            "type": "object",
+            "properties": {
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "value": {},
+              "expected_version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "default": 0
+              },
+              "restore": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "collection_id",
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "MessageInput": {
+        "$ref": "#/$defs/MessageInput",
+        "$defs": {
+          "MessageInput": {
+            "title": "MessageInput",
+            "type": "object",
+            "properties": {
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "external_id": {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 8000,
+                "minLength": 1
+              },
+              "author": {
+                "enum": [
+                  "user"
+                ],
+                "default": "user"
+              }
+            },
+            "required": [
+              "collection_id",
+              "external_id",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "MessageUpdate": {
+        "$ref": "#/$defs/MessageUpdate",
+        "$defs": {
+          "MessageUpdate": {
+            "title": "MessageUpdate",
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 8000,
+                "minLength": 1
+              }
+            },
+            "required": [
+              "expected_version",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "ExtractionInput": {
+        "$ref": "#/$defs/ExtractionInput",
+        "$defs": {
+          "ExtractionInput": {
+            "title": "ExtractionInput",
+            "type": "object",
+            "properties": {
+              "delivery_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "period": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/Period"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "delivery_id"
+            ],
+            "additionalProperties": false
+          },
+          "Period": {
+            "title": "Period",
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "MemoryAction": {
+        "$ref": "#/$defs/MemoryAction",
+        "$defs": {
+          "MemoryAction": {
+            "title": "MemoryAction",
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              }
+            },
+            "required": [
+              "expected_version"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "FeedbackInput": {
+        "$ref": "#/$defs/FeedbackInput",
+        "$defs": {
+          "FeedbackInput": {
+            "title": "FeedbackInput",
+            "type": "object",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              "rating": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "helpful",
+                      "unhelpful"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "accepted",
+                      "outdated",
+                      "rejected"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "claim_index": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 19
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "comment": {
+                "type": "string",
+                "maxLength": 1000,
+                "default": ""
+              },
+              "preference": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/PreferenceWrite"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "request_id"
+            ],
+            "additionalProperties": false
+          },
+          "PreferenceWrite": {
+            "title": "PreferenceWrite",
+            "type": "object",
+            "properties": {
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "value": {},
+              "expected_version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "default": 0
+              },
+              "restore": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "collection_id",
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "MemoryView": {
+        "$ref": "#/$defs/MemoryView",
+        "$defs": {
+          "MemoryView": {
+            "title": "MemoryView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "source_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "observation",
+                  "preference"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "candidate",
+                  "confirmed",
+                  "deleted",
+                  "invalidated",
+                  "rejected",
+                  "superseded"
+                ]
+              },
+              "version": {
+                "type": "integer"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "value": {},
+              "provenance": {
+                "type": "object"
+              },
+              "period": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/Period"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "collection_id",
+              "source_id",
+              "key",
+              "kind",
+              "state",
+              "version",
+              "origin",
+              "value",
+              "provenance",
+              "period",
+              "created_at",
+              "updated_at"
+            ],
+            "additionalProperties": false
+          },
+          "Period": {
+            "title": "Period",
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "MemoryPage": {
+        "$ref": "#/$defs/MemoryPage",
+        "$defs": {
+          "MemoryPage": {
+            "title": "MemoryPage",
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/MemoryView"
+                }
+              },
+              "next_cursor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "next_cursor"
+            ],
+            "additionalProperties": false
+          },
+          "MemoryView": {
+            "title": "MemoryView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "source_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "observation",
+                  "preference"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "candidate",
+                  "confirmed",
+                  "deleted",
+                  "invalidated",
+                  "rejected",
+                  "superseded"
+                ]
+              },
+              "version": {
+                "type": "integer"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "value": {},
+              "provenance": {
+                "type": "object"
+              },
+              "period": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/Period"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "collection_id",
+              "source_id",
+              "key",
+              "kind",
+              "state",
+              "version",
+              "origin",
+              "value",
+              "provenance",
+              "period",
+              "created_at",
+              "updated_at"
+            ],
+            "additionalProperties": false
+          },
+          "Period": {
+            "title": "Period",
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "SettingsView": {
+        "$ref": "#/$defs/SettingsView",
+        "$defs": {
+          "SettingsView": {
+            "title": "SettingsView",
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "config": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "version",
+              "enabled",
+              "config"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "MessageView": {
+        "$ref": "#/$defs/MessageView",
+        "$defs": {
+          "MessageView": {
+            "title": "MessageView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "external_id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "author": {
+                "enum": [
+                  "user"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "collection_id",
+              "external_id",
+              "version",
+              "author",
+              "text",
+              "created_at"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "MessageCandidates": {
+        "$ref": "#/$defs/MessageCandidates",
+        "$defs": {
+          "MessageCandidates": {
+            "title": "MessageCandidates",
+            "type": "object",
+            "properties": {
+              "message_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/MemoryView"
+                }
+              },
+              "ambiguous_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "message_id",
+              "version",
+              "items",
+              "ambiguous_keys"
+            ],
+            "additionalProperties": false
+          },
+          "MemoryView": {
+            "title": "MemoryView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "source_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "observation",
+                  "preference"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "candidate",
+                  "confirmed",
+                  "deleted",
+                  "invalidated",
+                  "rejected",
+                  "superseded"
+                ]
+              },
+              "version": {
+                "type": "integer"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "value": {},
+              "provenance": {
+                "type": "object"
+              },
+              "period": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/Period"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "collection_id",
+              "source_id",
+              "key",
+              "kind",
+              "state",
+              "version",
+              "origin",
+              "value",
+              "provenance",
+              "period",
+              "created_at",
+              "updated_at"
+            ],
+            "additionalProperties": false
+          },
+          "Period": {
+            "title": "Period",
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "ExtractionView": {
+        "$ref": "#/$defs/ExtractionView",
+        "$defs": {
+          "ExtractionView": {
+            "title": "ExtractionView",
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/MemoryView"
+                }
+              },
+              "automatic_confirmation": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "items",
+              "automatic_confirmation"
+            ],
+            "additionalProperties": false
+          },
+          "MemoryView": {
+            "title": "MemoryView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "collection_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "source_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "observation",
+                  "preference"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "candidate",
+                  "confirmed",
+                  "deleted",
+                  "invalidated",
+                  "rejected",
+                  "superseded"
+                ]
+              },
+              "version": {
+                "type": "integer"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "value": {},
+              "provenance": {
+                "type": "object"
+              },
+              "period": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/Period"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "collection_id",
+              "source_id",
+              "key",
+              "kind",
+              "state",
+              "version",
+              "origin",
+              "value",
+              "provenance",
+              "period",
+              "created_at",
+              "updated_at"
+            ],
+            "additionalProperties": false
+          },
+          "Period": {
+            "title": "Period",
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "FeedbackView": {
+        "$ref": "#/$defs/FeedbackView",
+        "$defs": {
+          "FeedbackView": {
+            "title": "FeedbackView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "result_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "profile_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "rating": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "helpful",
+                      "unhelpful"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "accepted",
+                      "outdated",
+                      "rejected"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "claim_index": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "comment": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "effect": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "result_id",
+              "profile_id",
+              "request_id",
+              "rating",
+              "decision",
+              "claim_index",
+              "comment",
+              "revision",
+              "created_at",
+              "effect"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "FeedbackPage": {
+        "$ref": "#/$defs/FeedbackPage",
+        "$defs": {
+          "FeedbackPage": {
+            "title": "FeedbackPage",
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/FeedbackView"
+                }
+              },
+              "next_cursor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "next_cursor"
+            ],
+            "additionalProperties": false
+          },
+          "FeedbackView": {
+            "title": "FeedbackView",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "result_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "profile_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "rating": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "helpful",
+                      "unhelpful"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "accepted",
+                      "outdated",
+                      "rejected"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "claim_index": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "comment": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "effect": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "result_id",
+              "profile_id",
+              "request_id",
+              "rating",
+              "decision",
+              "claim_index",
+              "comment",
+              "revision",
+              "created_at",
+              "effect"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "consent": "Owner settings.enabled AND immutable profile.personalization.enabled; off by default. Explicit collections, keys/scalar schemas, user-message prefixes and current-field rules. No automatic memory extraction from uploads, conversations, AI answers or run history.",
+    "extraction": "Deterministic allowlisted scalar JSON fields or exact complete user-message prefix assignments. No arbitrary NLP/code/regex or model calls. Trusted backend declares user-origin fields/messages; attached files/metadata are rejected. Values remain candidates until confirmation. Observations require events, an aware period and sample_count=1 provenance, never an immutable personal trait. Event fields are observations only; preferences require declared user record fields/messages or explicit API writes.",
+    "conflicts": "One confirmed preference per owner/collection/key. Contradictory candidates cannot overwrite it. Explicit preference PUT is versioned and authoritative. Multiple conflicting assignments in one message remain unpromoted with ambiguous_keys. Delete clears value/provenance and blocks automatic extraction for collection/key; restore=true permits only a new explicit assertion.",
+    "context": "query/analyze/recommend opt in with memory collections/keys, observations flag, max_items<=20/max_chars<=6000. Only confirmed current-source values with memory:read and current source grants. Feedback separately requires feedback:read. Context is untrusted preference guidance, never factual evidence/source IDs. Read failure falls back via savepoint; no automatic post-answer memory writes. Revision/permissions/versions rechecked before personalized save. Initial optional read has a 1s deadline; feedback collection permissions are batch-checked before use. Period-bound observations must overlap a requested analysis/comparison period when one is supplied.",
+    "feedback": "Immutable idempotent owner/result request_id; helpful/unhelpful and accepted/rejected/outdated, optional claim_index/all and separate explicit preference. Latest explicit decision per NFKC/casefold/whitespace-normalized proposal text within a profile controls server-side exact repeat suppression. Acceptance is not execution or verified benefit. All repeats withheld -> insufficient_data with reason. Non-recommendation decisions do not suppress output.",
+    "profile_scores": "Latest feedback record per result/claim target: helpful+accepted minus unhelpful+rejected+outdated; max1000 inspected records and partial flag. Heuristic for caller selection, not confidence or automatic profile replacement.",
+    "lifecycle": "Normal source updates/corrections invalidate and clear dependent memory; personalized results become stale. Explicit memory/source erasure physically purges dependent results and cancels active personalized jobs. Source/user erasure clears private memory/config/messages and primary fences prevent replay. Owner revision also creates on-change recalculation intent; result saves alone do not change memory or retrigger. Once disabled, further memory/feedback revision changes do not schedule personalization recalculations; disabling itself may request one unpersonalized refresh.",
+    "retention": "Memory/current explicit messages/feedback persist until deletion; no automatic expiry. Deleted entries keep opaque identity plus collection/key suppression, not value/provenance. Erased message receipts retain identity, not text/fingerprint. Memory-only forget disables use and blocks automatic replay, leaving primary sources/dialogue and separate feedback untouched. Feedback cascades with result; explicit preference supplied through feedback is independent and deleted via memory API. No training/fine-tuning or numeric confidence.",
+    "limits": {
+      "items_per_owner": 2000,
+      "message_receipts_per_owner": 1000,
+      "feedback_records_per_owner": 5000,
+      "collections": 10,
+      "keys": 30,
+      "field_rules": 30,
+      "message_chars": 8000,
+      "memory_string_chars": 500,
+      "context_items_max": 20,
+      "context_chars_max": 6000
+    },
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/v1/memory/settings",
+        "scope": "memory:read; unrestricted source grant"
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/memory/settings",
+        "scope": "memory:write; unrestricted source grant"
+      },
+      {
+        "method": "DELETE",
+        "path": "/v1/memory",
+        "scope": "memory:write; unrestricted source grant"
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/memory/preferences",
+        "scope": "memory:write"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/memory/items",
+        "scope": "memory:read"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/memory/items/{item_id}",
+        "scope": "memory:read"
+      },
+      {
+        "method": "DELETE",
+        "path": "/v1/memory/items/{item_id}",
+        "scope": "memory:write"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/memory/items/{item_id}/confirm",
+        "scope": "memory:write"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/memory/messages",
+        "scope": "memory:write"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/memory/messages/{message_id}",
+        "scope": "memory:read"
+      },
+      {
+        "method": "PUT",
+        "path": "/v1/memory/messages/{message_id}",
+        "scope": "memory:write"
+      },
+      {
+        "method": "DELETE",
+        "path": "/v1/memory/messages/{message_id}",
+        "scope": "memory:write"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/memory/extractions",
+        "scope": "memory:write + data:read"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/results/{result_id}/feedback",
+        "scope": "feedback:write + data:read; memory:write if explicit preference"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/results/{result_id}/feedback",
+        "scope": "feedback:read + data:read"
+      },
+      {
+        "method": "DELETE",
+        "path": "/v1/results/{result_id}/feedback",
+        "scope": "feedback:write + data:read"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/feedback/profiles",
+        "scope": "feedback:read + data:read"
+      }
+    ],
+    "example_directory": "app/integration/memory_examples; replace placeholder memory/data collection UUIDs and read current settings/preference version before PUT."
   }
 }

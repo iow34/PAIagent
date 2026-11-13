@@ -253,6 +253,9 @@ class DataService(IntegrationService):
                 )
             result = await self._ingest(repo, row.collection_id, data, "events")
             row.corrected_by_id = result.delivery_id
+            from app.personalization.lifecycle import invalidate_deliveries
+
+            await invalidate_deliveries(repo.session, self.context, [row.id])
         return result
 
     async def ingest_one(
@@ -436,6 +439,20 @@ class DataService(IntegrationService):
             obj.references = refs
             obj.occurred_at = data.occurred_at
             obj.received_at = now
+        if applied:
+            assert obj is not None
+            from app.personalization.lifecycle import invalidate_deliveries
+
+            previous = list(
+                await repo.session.scalars(
+                    select(DataDelivery.id).where(
+                        *owner(DataDelivery, self.context),
+                        DataDelivery.object_id == obj.id,
+                        DataDelivery.id != delivery.id,
+                    )
+                )
+            )
+            await invalidate_deliveries(repo.session, self.context, previous)
         if applied and data.operation == "delete":
             assert obj is not None
             await self._erase_objects(repo, [obj.id])
@@ -870,7 +887,11 @@ class DataService(IntegrationService):
                 )
             )
         from app.jobs.lifecycle import erase_runs
+        from app.personalization.lifecycle import invalidate_deliveries
 
+        await invalidate_deliveries(
+            repo.session, self.context, delivery_ids, erased=True
+        )
         await erase_runs(repo.session, self.context, impacted_collections)
         for collection_id in impacted_collections:
             await repo.session.execute(
@@ -1090,7 +1111,11 @@ class DataService(IntegrationService):
                     )
                 )
                 from app.jobs.lifecycle import erase_runs
+                from app.personalization.lifecycle import (
+                    erase_scope as erase_memory_scope,
+                )
 
+                await erase_memory_scope(repo.session, self.context, collection_ids)
                 await erase_runs(repo.session, self.context, collection_ids)
                 for cid in collection_ids:
                     await repo.session.execute(
@@ -1100,14 +1125,26 @@ class DataService(IntegrationService):
                         )
                     )
                     affected = profile_stmt.where(
-                        AnalysisProfileVersion.config["selections"].contains(
-                            [{"collection_id": str(cid)}]
+                        (
+                            AnalysisProfileVersion.config["selections"].contains(
+                                [{"collection_id": str(cid)}]
+                            )
+                        )
+                        | (
+                            AnalysisProfileVersion.config["personalization"][
+                                "collections"
+                            ].contains([str(cid)])
                         )
                     )
                     await repo.session.execute(
                         delete(AnalysisProfile).where(AnalysisProfile.id.in_(affected))
                     )
             else:
+                from app.personalization.lifecycle import (
+                    erase_scope as erase_memory_scope,
+                )
+
+                await erase_memory_scope(repo.session, self.context)
                 await repo.session.execute(
                     delete(AnalysisProfile).where(*owner(AnalysisProfile, self.context))
                 )

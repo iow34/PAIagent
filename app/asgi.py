@@ -18,6 +18,7 @@ from app.api.controllers.health import HealthController
 from app.api.controllers.integration import IntegrationController
 from app.api.controllers.jobs import JobController
 from app.api.controllers.knowledge import KnowledgeController
+from app.api.controllers.memory import MemoryController
 from app.api.controllers.query import QueryController
 from app.api.controllers.search import SearchController
 from app.capabilities.generation import OpenAIGenerator
@@ -169,6 +170,7 @@ def create_app() -> Litestar:
             EvidenceController,
             CapabilityController,
             JobController,
+            MemoryController,
             DocumentController,
             SearchController,
             QueryController,
@@ -196,7 +198,7 @@ def create_app() -> Litestar:
         },
         openapi_config=OpenAPIConfig(
             title="PAIagent API",
-            version="0.6.0",
+            version="0.7.0",
             components=Components(
                 security_schemes={
                     "ServiceAPIKey": SecurityScheme(

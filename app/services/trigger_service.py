@@ -1,7 +1,7 @@
 """Durable outbox consumption and drift-free interval scheduling."""
 
 from datetime import UTC, timedelta
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import msgspec
 from litestar.exceptions import HTTPException
@@ -13,6 +13,7 @@ from app.db.models import AnalysisRun, AnalysisTrigger
 from app.integration.validation import ContractError
 from app.jobs.runtime import ACTIVE, LIMITS, authorize, db_now, queue_lock, quota_error
 from app.jobs.types import TriggerInput
+from app.personalization.context import trigger_signature
 from app.repositories.data_lifecycle import DataRepository, lock_owner, owner
 from app.security.context import AccessContext
 from app.security.permissions import require_scope
@@ -100,12 +101,24 @@ class TriggerService(JobService):
                 if self.context.source_ids is None
                 else [str(s) for s in self.context.source_ids]
             )
-            row.collection_ids = [str(s.collection_id) for s in config.selections]
+            row.collection_ids = sorted(
+                {str(s.collection_id) for s in config.selections}
+                | (
+                    {str(cid) for cid in config.personalization.collections}
+                    if config.personalization.enabled
+                    else set()
+                )
+            )
             row.config = msgspec.to_builtins(data)
             row.revision = uuid4()
             row.enabled = data.enabled
-            row.last_signature = await snapshot(
-                repo, self.context, [UUID(cid) for cid in row.collection_ids]
+            row.last_signature = await trigger_signature(
+                repo,
+                self.context,
+                config,
+                await snapshot(
+                    repo, self.context, [s.collection_id for s in config.selections]
+                ),
             )
             row.checked_at = now
             row.error_code = None
@@ -174,8 +187,13 @@ async def schedule(factory, *, limits=LIMITS, batch_size=50):
                 )
                 await service.configuration(repo, config, writable=True)
                 settings = msgspec.convert(trigger.config, type=TriggerInput)
-                signature = await snapshot(
-                    repo, context, [UUID(cid) for cid in trigger.collection_ids]
+                signature = await trigger_signature(
+                    repo,
+                    context,
+                    config,
+                    await snapshot(
+                        repo, context, [s.collection_id for s in config.selections]
+                    ),
                 )
                 changed = settings.on_change and signature != trigger.last_signature
                 due = trigger.next_due_at is not None and trigger.next_due_at <= now

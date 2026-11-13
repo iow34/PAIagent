@@ -4,14 +4,11 @@ from uuid import UUID
 
 import msgspec
 
+from app.personalization.types import Period, Personalization
+
 Capability = Literal["search", "query", "summarize", "extract", "analyze", "recommend"]
 Short = Annotated[str, msgspec.Meta(min_length=1, max_length=2000)]
 Path = Annotated[str, msgspec.Meta(min_length=2, max_length=300)]
-
-
-class Period(msgspec.Struct, forbid_unknown_fields=True):
-    start: datetime
-    end: datetime
 
 
 class Filter(msgspec.Struct, forbid_unknown_fields=True):
@@ -66,6 +63,7 @@ class ProfileInput(msgspec.Struct, forbid_unknown_fields=True):
     language: Annotated[str, msgspec.Meta(min_length=1, max_length=50)] = "uk"
     output_schema: dict[str, Any] | None = None
     metrics: Annotated[list[Metric], msgspec.Meta(max_length=20)] = []
+    personalization: Personalization = msgspec.field(default_factory=Personalization)
     minimum_samples: Annotated[int, msgspec.Meta(ge=1, le=5000)] = 1
     budget: Budget = msgspec.field(default_factory=Budget)
 
@@ -120,6 +118,7 @@ class CapabilityResult(msgspec.Struct, forbid_unknown_fields=True):
     freshness: Literal["current", "stale"]
     persisted: bool
     usage: dict[str, int]
+    personalization: dict[str, Any] = {}
 
 
 class ResultSummary(msgspec.Struct, forbid_unknown_fields=True):
