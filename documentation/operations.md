@@ -71,4 +71,4 @@ A 403 indicates missing scope/source grants. A 404 may reflect isolation or eras
 .venv/bin/python tests/run_postgres_tests.py --all
 ```
 
-The PostgreSQL runner creates and removes a temporary `_test` database cluster; it requires local PostgreSQL binaries and pgvector. It does not migrate the configured application database. Onboarding tests use real TCP HTTP and fake providers. They verify the integration protocol, not real model quality, throughput or production recovery guarantees. Test sources live in the local ignored `tests/` directory; include that suite separately if you want CI on another checkout. Documentation and executable client examples are tracked.
+The PostgreSQL runner creates and removes a temporary `_test` database cluster; it requires local PostgreSQL binaries and pgvector. It does not migrate the configured application database. Onboarding tests use real TCP HTTP and fake providers. They verify the integration protocol, not real model quality, throughput or production recovery guarantees. Test sources, the temporary PostgreSQL runner, documentation, and executable client examples are included in the repository.

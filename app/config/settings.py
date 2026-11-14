@@ -25,7 +25,7 @@ class Settings(msgspec.Struct, frozen=True):
             raise ValueError("OPENAI_GENERATION_MODEL must not be empty.")
 
         if self.embedding_model != "text-embedding-3-small":
-            raise ValueError("This MVP currently supports text-embedding-3-small only.")
+            raise ValueError("Only text-embedding-3-small embeddings are supported.")
 
         if self.embedding_dimensions != 1536:
             raise ValueError("Embedding dimensions must be 1536 for the current index.")

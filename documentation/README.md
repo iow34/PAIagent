@@ -20,7 +20,7 @@ Example assets:
 - [Search](examples/profiles/search.json), [query](examples/profiles/query.json), [summarize](examples/profiles/summarize.json), [extract](examples/profiles/extract.json), [analyze](examples/profiles/analyze.json), [recommend](examples/profiles/recommend.json) profile templates. Replace collection UUIDs; templates target the tasks schema.
 - [Memory settings](examples/memory/settings.json) and other files in `examples/memory/`: replace collection/result/item IDs before use. See the memory section of the reference for the required schemas, opt-in and grants.
 
-This directory is tracked independently of internal, ignored `docs/`. Include the whole directory with the source release; the API serves its static HTML and downloadable assets at **`/developer/`**, interactive docs at **`/schema`**, and live OpenAPI at **`/schema/openapi.json`**. Markdown links work in GitHub. A source checkout remains the installation unit; no separate published Python package or external documentation host is assumed.
+The API serves the static HTML and downloadable assets in this directory at **`/developer/`**, interactive docs at **`/schema`**, and live OpenAPI at **`/schema/openapi.json`**. Markdown links work in GitHub. A source checkout remains the installation unit; no separate published Python package or external documentation host is assumed.
 
 After changing handlers, contract, fixtures or Markdown, run:
 

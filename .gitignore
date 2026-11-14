@@ -1,7 +1,13 @@
 .venv/
 .env
+.env.*
+!.env.example
 __pycache__/
 *.pyc
+.DS_Store
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
 docs/
 test.py
-tests/
