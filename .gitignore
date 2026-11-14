@@ -11,3 +11,6 @@ __pycache__/
 htmlcov/
 docs/
 test.py
+assets/
+check_db.py
+check_openai.py
